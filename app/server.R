@@ -810,11 +810,13 @@ server <- function(input, output, session) {
       tr("plot_sel_vars_over_time")
 
     p <- ggplot2::ggplot(long_df, ggplot2::aes(x = .data[[dt_col]], y = .data$value)) +
+
       ggplot2::geom_line(colour = "#26374A", linewidth = 0.6, na.rm = TRUE) +
       ggplot2::facet_wrap(~ var_label, ncol = ncol_facets,
                  scales = if (isTRUE(input$facet_free_y)) "free_y" else "fixed") +
       ggplot2::labs(x = tr("plot_time_x"), y = NULL, title = title_txt) +
       theme_goc()
+
     if (nrow(long_df) < 20000) {
       p <- p + ggplot2::geom_point(colour = "#26374A", size = 0.8, alpha = 0.7, na.rm = TRUE)
     }
