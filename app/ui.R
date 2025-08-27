@@ -1,7 +1,7 @@
 
 # --- Shinylive/Chromium download workaround (Shinylive only) ---
 # See: https://shiny.posit.co/r/components/inputs/download-link/
-library(DT)
+
 downloadButton_sl <- function(...) {
   tag <- shiny::downloadButton(...)
   tag$attribs$download <- NULL
@@ -205,7 +205,7 @@ ui <- fluidPage(
             tabPanel(
               title = textOutput("tab_output_title"),
               value = "Output",
-              DTOutput("tbl", width = "100%")
+              DT::DTOutput("tbl", width = "100%")
             ),
             tabPanel(
               title = textOutput("tab_plot_title"),
