@@ -948,7 +948,7 @@ hFWI <- function(df_wx, timezone, ffmc_old = 85, dmc_old = 6, dc_old = 15) {
   if (!hadTimestamp) {
     wx[, TIMESTAMP := as_datetime(sprintf("%04d-%02d-%02d %02d:%02d:00", YR, MONTH, DAY, HR, MINUTE))]
   }
-  print(glimpse(wx))
+  # print(glimpse(wx))
   # loop in hFWI function
   write.csv(wx, "structured_input.csv")
   results <- NULL
