@@ -63,7 +63,7 @@ ui <- fluidPage(
       if (main && msg.app) main.setAttribute('aria-label', msg.app);
       var tabs = document.getElementById('tabs-region');
       if (tabs && msg.tabs) tabs.setAttribute('aria-label', msg.tabs);
-      var run = document.getElementById('btn_run');
+      var run = document.getElementById('run');
       if (run && msg.run_label) run.setAttribute('aria-label', msg.run_label);
     } catch(e){}
   });
@@ -155,8 +155,6 @@ ui <- fluidPage(
         tags$div(role = "status", `aria-live` = "polite",
                  verbatimTextOutput("tz_out")),
 
-        tags$hr(),
-
         # Filter
         h4(id = "lbl_filter", textOutput("lbl_filter")),
         # associate help text to the date input
@@ -166,7 +164,6 @@ ui <- fluidPage(
         tags$p(id = "help_drop_rows", class = "help-block",
                textOutput("txt_drop_rows_help")),
 
-        tags$hr(),
 
         # Initial codes & Run/Download
         numericInput(
