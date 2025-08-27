@@ -1,8 +1,6 @@
 name: Build & Deploy Shinylive app to GitHub Pages
 
 on:
-  #push:
-  #  branches: [ "dev" ]
   workflow_dispatch:
 
 permissions:
@@ -23,15 +21,46 @@ jobs:
 
       - name: Set up R
         uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true  # fast CRAN binaries on Linux
 
-      - name: Install R packages needed to export
+      - name: Install R packages via r-lib/actions
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          # Add anything your app/export needs. If your repo isn't an R package,
+          # use extra-packages to install explicitly:
+          extra-packages: |
+            any::shinylive
+            any::shiny
+            any::DT
+            any::data.table
+            any::dplyr
+            any::lubridate
+            any::stringr
+            any::purrr
+            any::tidyr
+            any::ggplot2
+
+
+      - name: Verify packages present
+        shell: Rscript {0}
         run: |
-          Rscript -e 'options(repos = c(CRAN = "https://packagemanager.posit.co/cran/latest")); install.packages(c("shinylive","httpuv"))'
-
+          cat("shinylive :", as.character(packageVersion("shinylive")) , "\n")
+          cat("shiny     :", as.character(packageVersion("shiny"))     , "\n")
+          cat("DT        :", as.character(packageVersion("DT"))        , "\n")
+          cat("data.table:", as.character(packageVersion("data.table")), "\n")
+          cat("dplyr     :", as.character(packageVersion("dplyr"))     , "\n")
+          cat("lubridate :", as.character(packageVersion("lubridate")) , "\n")
+          cat("stringr   :", as.character(packageVersion("stringr"))   , "\n")
+          cat("tidyr     :", as.character(packageVersion("tidyr"))     , "\n")
+          cat("purrr     :", as.character(packageVersion("purrr"))     , "\n")
+          cat("ggplot2   :", as.character(packageVersion("ggplot2"))   , "\n")
 
       - name: Export Shinylive site
+        shell: Rscript {0}
         run: |
-          Rscript -e 'shinylive::export("app", "docs", wasm_packages = TRUE, max_filesize = "200M")'
+          dir.create("docs", showWarnings = FALSE)
+          shinylive::export("app", "docs", wasm_packages = TRUE, max_filesize = "200M")
 
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
