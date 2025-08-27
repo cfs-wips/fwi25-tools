@@ -435,7 +435,7 @@ server <- function(input, output, session) {
     updateNumericInput(session, "dmc0", label = tr("init_dmc"))
     updateNumericInput(session, "dc0", label = tr("init_dc"))
 
-    output$run<-renderUI(actionButton("btn_run",label = tr("run_hfwi"), class = "btn-primary",
+    output$run<-renderUI(actionButton("run",label = tr("run_hfwi"), class = "btn-primary",
                                        `aria-label` = tr("aria_run_label")))
     output$dl_ui <- renderUI(downloadButton("dl", tr("download_results")))
 
@@ -809,12 +809,14 @@ server <- function(input, output, session) {
     else
       tr("plot_sel_vars_over_time")
 
-    p <- ggplot2::ggplot(long_df, aes(x = .data[[dt_col]], y = .data$value)) +
+    p <- ggplot2::ggplot(long_df, ggplot2::aes(x = .data[[dt_col]], y = .data$value)) +
+
       ggplot2::geom_line(colour = "#26374A", linewidth = 0.6, na.rm = TRUE) +
       ggplot2::facet_wrap(~ var_label, ncol = ncol_facets,
                  scales = if (isTRUE(input$facet_free_y)) "free_y" else "fixed") +
       ggplot2::labs(x = tr("plot_time_x"), y = NULL, title = title_txt) +
-      ggplot2::theme_goc()
+      theme_goc()
+
     if (nrow(long_df) < 20000) {
       p <- p + ggplot2::geom_point(colour = "#26374A", size = 0.8, alpha = 0.7, na.rm = TRUE)
     }
