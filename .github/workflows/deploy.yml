@@ -36,8 +36,6 @@ jobs:
             any::data.table
             any::dplyr
             any::lubridate
-            any::stringr
-            any::purrr
             any::tidyr
             any::ggplot2
 
