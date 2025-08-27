@@ -36,8 +36,6 @@ jobs:
             any::data.table
             any::dplyr
             any::lubridate
-            any::stringr
-            any::purrr
             any::tidyr
             any::ggplot2
 
@@ -51,9 +49,8 @@ jobs:
           cat("data.table:", as.character(packageVersion("data.table")), "\n")
           cat("dplyr     :", as.character(packageVersion("dplyr"))     , "\n")
           cat("lubridate :", as.character(packageVersion("lubridate")) , "\n")
-          cat("stringr   :", as.character(packageVersion("stringr"))   , "\n")
           cat("tidyr     :", as.character(packageVersion("tidyr"))     , "\n")
-          cat("purrr     :", as.character(packageVersion("purrr"))     , "\n")
+          cat("tidyr     :", as.character(packageVersion("tidyr"))     , "\n")
           cat("ggplot2   :", as.character(packageVersion("ggplot2"))   , "\n")
 
       - name: Export Shinylive site
