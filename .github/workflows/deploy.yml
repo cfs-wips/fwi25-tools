@@ -50,6 +50,7 @@ jobs:
           cat("dplyr     :", as.character(packageVersion("dplyr"))     , "\n")
           cat("lubridate :", as.character(packageVersion("lubridate")) , "\n")
           cat("tidyr     :", as.character(packageVersion("tidyr"))     , "\n")
+          cat("tidyr     :", as.character(packageVersion("tidyr"))     , "\n")
           cat("ggplot2   :", as.character(packageVersion("ggplot2"))   , "\n")
 
       - name: Export Shinylive site
