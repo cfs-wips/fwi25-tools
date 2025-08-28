@@ -487,7 +487,7 @@ server <- function(input, output, session) {
 
     output$run<-renderUI(actionButton("run",label = tr("run_hfwi"), class = "btn-primary",
                                        `aria-label` = tr("aria_run_label")))
-    output$dl_ui <- renderUI(downloadButton_sl("dl", tr("download_results")))
+    output$dl_ui <- renderUI(downloadButton("dl", tr("download_results")))
 
     output$tab_output_title <- renderText(tr("tab_output"))
     output$tab_plot_title <- renderText(tr("tab_plot"))
