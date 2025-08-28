@@ -38,20 +38,22 @@ jobs:
             any::lubridate
             any::tidyr
             any::ggplot2
+            any::shinycssloaders
 
 
       - name: Verify packages present
         shell: Rscript {0}
         run: |
-          cat("shinylive :", as.character(packageVersion("shinylive")) , "\n")
-          cat("shiny     :", as.character(packageVersion("shiny"))     , "\n")
-          cat("DT        :", as.character(packageVersion("DT"))        , "\n")
-          cat("data.table:", as.character(packageVersion("data.table")), "\n")
-          cat("dplyr     :", as.character(packageVersion("dplyr"))     , "\n")
-          cat("lubridate :", as.character(packageVersion("lubridate")) , "\n")
-          cat("tidyr     :", as.character(packageVersion("tidyr"))     , "\n")
-          cat("tidyr     :", as.character(packageVersion("tidyr"))     , "\n")
-          cat("ggplot2   :", as.character(packageVersion("ggplot2"))   , "\n")
+          cat("shinylive      :", as.character(packageVersion("shinylive")) , "\n")
+          cat("shiny          :", as.character(packageVersion("shiny"))     , "\n")
+          cat("DT             :", as.character(packageVersion("DT"))        , "\n")
+          cat("data.table     :", as.character(packageVersion("data.table")), "\n")
+          cat("dplyr          :", as.character(packageVersion("dplyr"))     , "\n")
+          cat("lubridate      :", as.character(packageVersion("lubridate")) , "\n")
+          cat("tidyr          :", as.character(packageVersion("tidyr"))     , "\n")
+          cat("tidyr          :", as.character(packageVersion("tidyr"))     , "\n")
+          cat("ggplot2        :", as.character(packageVersion("ggplot2"))   , "\n")
+          cat("shinycssloaders:", as.character(packageVersion("ggplot2"))   , "\n")
 
       - name: Export Shinylive site
         shell: Rscript {0}

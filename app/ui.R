@@ -13,10 +13,21 @@ downloadLink_sl <- function(...) {
   tag
 }
 
-ui <- fluidPage(
-
+ui <- fluidPage(title = NULL,
   # --- HEAD ---
   tags$head(
+    
+    # Static initial title for very first paint (will be overwritten by JS immediately)
+    tags$title("FWI2025"),
+    
+    # JS handler that updates the browser tab title on language change or whenever you call it
+    tags$script(HTML("
+  Shiny.addCustomMessageHandler('set-title', function(msg){
+    try { document.title = msg; } catch(e) {}
+  });
+")),
+    
+    
     # GCDS fonts (Lato for headings, Noto Sans for body) - pinned
     tags$link(rel = "stylesheet",
               href = "https://cdn.jsdelivr.net/npm/@cdssnc/gcds-fonts@1.0.3/dist/gcds-fonts.css"),
@@ -108,7 +119,7 @@ ui <- fluidPage(
 
     sidebarLayout(
       # ===== Sidebar =====
-      sidebarPanel(
+      sidebarPanel(width=3,
         # Upload
         h4(id = "lbl_upload_csv", textOutput("lbl_upload_csv")),
         tags$div(role = "group", `aria-labelledby` = "lbl_upload_csv",
@@ -117,9 +128,11 @@ ui <- fluidPage(
 
         # Column mapping
         h4(id = "lbl_column_mapping", textOutput("lbl_column_mapping")),
-        tags$div(role = "group", `aria-labelledby` = "lbl_column_mapping",
-                 uiOutput("mapping_ui")),
-
+        tags$div(
+          role = "group", `aria-labelledby` = "lbl_column_mapping",
+          # the class below lets CSS reserve height & provide skeleton look
+          tags$div(class = "mapping-block", uiOutput("mapping_ui"))
+        ),
         tags$hr(),
 
         # Time zone (fieldset/legend for better semantics)
@@ -166,36 +179,40 @@ ui <- fluidPage(
 
 
         # Initial codes & Run/Download
-        numericInput(
-          "ffmc0",
-          label = NULL,
-          value = 85,
-          min = 0,
-          max = 101,
-          step = 1
-        ),
-        numericInput(
-          "dmc0",
-          label = NULL,
-          value = 6,
-          min = 0,
-          step = 1
-        ),
-        numericInput(
-          "dc0",
-          label = NULL,
-          value = 15,
-          min = 0,
-          step = 1
+        fluidRow(
+          column(4,numericInput(
+            "ffmc0",
+            label = NULL,
+            value = 85,
+            min = 0,
+            max = 101,
+            step = 1
+          )),
+          column(4,numericInput(
+            "dmc0",
+            label = NULL,
+            value = 6,
+            min = 0,
+            step = 1
+          )),
+          column(4,numericInput(
+            "dc0",
+            label = NULL,
+            value = 15,
+            min = 0,
+            step = 1
+          ))
         ),
         checkboxInput("calc_fwi87", label = "", value = TRUE),
-        uiOutput("run"),
-        uiOutput("dl_ui") # translated download button
+        fluidRow(
+          column(6,uiOutput("run")),
+          column(6,uiOutput("dl_ui"))
+        ) # translated download button
       ),
 
       # ===== Main panel =====
       mainPanel(
-        width = 8,
+        width = 9,
         # Wrap the tabset to provide an accessible label without naming args on tabsetPanel()
         tags$div(id = "tabs-region", role = "region", `aria-label` = "Primary output tabs",
           tabsetPanel(
@@ -204,20 +221,27 @@ ui <- fluidPage(
               title = textOutput("tab_output_title"),
               value = "Output",
               tags$div(
-                role = 'region',
-                `arial-label` = "FWI25 results table",
-                h4(textOutput("lbl_fwi25_title")),
-                DT::DTOutput("tbl", width = "100%"),
+                role = 'region', `aria-label` = "FWI25 results table",
+                # label appears only when the table is ready
+                conditionalPanel("output.has_tbl", h4(textOutput("lbl_fwi25_title"))),
+                # spinner is visible during computation
+                shinycssloaders::withSpinner(
+                  DT::DTOutput("tbl", width = "100%",height="40vh")
+                )
               ),
               tags$hr(),
-              
               tags$div(
-                role = "region",
-                `aria-label` = "FWI87 results table",
-                h4(textOutput("lbl_fwi87_title")),
-                DT::DTOutput("tbl_fwi87", width = "100%")
+                role = "region", `aria-label` = "FWI87 results table",
+                # label appears only when checkbox is TRUE and table is ready
+                conditionalPanel("input.calc_fwi87 && output.has_tbl87", h4(textOutput("lbl_fwi87_title"))),
+                # show spinner/table only if checkbox is TRUE
+                conditionalPanel(
+                  "input.calc_fwi87",
+                  shinycssloaders::withSpinner(
+                    DT::DTOutput("tbl_fwi87", width = "100%",height="40vh")
+                  )
+                )
               )
-              
             ),
             tabPanel(
               title = textOutput("tab_plot_title"),

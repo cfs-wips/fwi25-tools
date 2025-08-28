@@ -300,6 +300,7 @@ server <- function(input, output, session) {
   })
 
   # Initial labels/outputs
+  output$window_title <- renderText(tr("title"))
   output$app_title <- renderText(tr("title"))
   output$app_subtitle <- renderText("")
   output$skip_link_txt <- renderText(tr("skip_to_main"))
@@ -312,6 +313,7 @@ server <- function(input, output, session) {
       tabs = tr('aria_tabs_label'),
       run_label = tr('aria_run_label')
     ))
+    session$sendCustomMessage('set-title', tr('title'))
   }, ignoreInit = FALSE)
 
   nearest_noon_per_day <- function(df, dt_col = "datetime", hour_col = "hour", tz = "UTC") {
@@ -373,50 +375,73 @@ server <- function(input, output, session) {
     if (length(m) > 0) m[1] else ""
   }
   output$mapping_ui <- renderUI({
-    L <- lang() # dependency
-    df <- req(raw_file())
-    cols <- names(df)
-    tagList(
-      helpText(tr("mapping_help")),
-      selectInput(
-        "col_datetime",
-        tr("col_datetime"),
-        choices = c("", cols),
-        selected = find_col(cols, c("datetime","timestamp"))
-      ),
-      fluidRow(
-        column(3, selectInput("col_year", tr("col_year"), choices = c("", cols),
-                               selected = find_col(cols, c("year","yr","y")))),
-        column(3, selectInput("col_month", tr("col_month"), choices = c("", cols),
-                               selected = find_col(cols, c("month","mon","m")))),
-        column(3, selectInput("col_day", tr("col_day"), choices = c("", cols),
-                               selected = find_col(cols, c("day","dy","d")))),
-        column(3, selectInput(
-          "col_hour", tr("col_hour"), choices = c("", cols),
-          selected = find_col(cols, c("hour","hr","h"))
-        ))
-      ),
-      fluidRow(
-        column(3, selectInput("col_temp", tr("col_temp"), choices = cols,
-                               selected = find_col(cols, c("temp","temperature","t")))),
-        column(3, selectInput("col_rh", tr("col_rh"), choices = c("", cols),
-                               selected = find_col(cols, c("rh","relative humidity",
-                                                           "relative.humidity","relative_humidity","humidity")))),
-        column(3, selectInput("col_ws", tr("col_ws"), choices = c("", cols),
-                               selected = find_col(cols, c("ws","windspeed","wind_speed",
-                                                           "wind.speed","wind speed")))),
-        column(3, selectInput("col_rain", tr("col_rain"), choices = c("", cols),
-                               selected = find_col(cols, c("rain","precip","prec","precip_mm",
-                                                           "prec_mm","rain_mm"))))
-      ),
-      fluidRow(
-        column(6, selectInput("col_lat", tr("col_lat"), choices = c("", cols),
-                               selected = find_col(cols, c("lat","latitude")))),
-        column(6, selectInput("col_lon", tr("col_lon"), choices = c("", cols),
-                               selected = find_col(cols, c("lon","long","longitude"))))
+    L <- lang()  # dependency so labels refresh in FR/EN
+    
+    # No file yet -> show a skeleton placeholder so the layout height is reserved
+    if (is.null(input$csv)) {
+      return(
+        tags$div(class = "mapping-block",
+                 helpText(tr("mapping_help")),
+                 # simple skeleton rows to hint at incoming controls
+                 tags$div(class = "skeleton", style = "width: 60%"),  # Date-Time
+                 tags$div(class = "skeleton", style = "width: 100%; height: .5rem;"),
+                 tags$div(class = "skeleton", style = "width: 100%; height: .5rem;"),
+                 tags$div(class = "skeleton", style = "width: 100%; height: .5rem;"),
+                 tags$div(class = "skeleton", style = "width: 100%; height: .5rem;")
+        )
       )
+    }
+    
+    # File exists -> actual mapping UI
+    df   <- raw_file()
+    cols <- names(df)
+    
+    find_col <- function(cols, keywords) {
+      m <- cols[grepl(paste0("^", keywords, "$", collapse = "|"), cols, ignore.case = TRUE)]
+      if (length(m) > 0) m[1] else ""
+    }
+    
+    tags$div(class = "mapping-block",
+             helpText(tr("mapping_help")),
+             selectInput(
+               "col_datetime", tr("col_datetime"),
+               choices = c("", cols),
+               selected = find_col(cols, c("datetime","timestamp"))
+             ),
+             fluidRow(
+               column(3, selectInput("col_year",  tr("col_year"),  choices = c("", cols),
+                                     selected = find_col(cols, c("year","yr","y")))),
+               column(3, selectInput("col_month", tr("col_month"), choices = c("", cols),
+                                     selected = find_col(cols, c("month","mon","m")))),
+               column(3, selectInput("col_day",   tr("col_day"),   choices = c("", cols),
+                                     selected = find_col(cols, c("day","dy","d")))),
+               column(3, selectInput(
+                 "col_hour", tr("col_hour"), choices = c("", cols),
+                 selected = find_col(cols, c("hour","hr","h"))
+               ))
+             ),
+             fluidRow(
+               column(3, selectInput("col_temp", tr("col_temp"), choices = cols,
+                                     selected = find_col(cols, c("temp","temperature","t")))),
+               column(3, selectInput("col_rh", tr("col_rh"), choices = c("", cols),
+                                     selected = find_col(cols, c("rh","relative humidity",
+                                                                 "relative.humidity","relative_humidity","humidity")))),
+               column(3, selectInput("col_ws", tr("col_ws"), choices = c("", cols),
+                                     selected = find_col(cols, c("ws","windspeed","wind_speed",
+                                                                 "wind.speed","wind speed")))),
+               column(3, selectInput("col_rain", tr("col_rain"), choices = c("", cols),
+                                     selected = find_col(cols, c("rain","precip","prec",
+                                                                 "precip_mm","prec_mm","rain_mm"))))
+             ),
+             fluidRow(
+               column(6, selectInput("col_lat", tr("col_lat"), choices = c("", cols),
+                                     selected = find_col(cols, c("lat","latitude")))),
+               column(6, selectInput("col_lon", tr("col_lon"), choices = c("", cols),
+                                     selected = find_col(cols, c("lon","long","longitude"))))
+             )
     )
   })
+  
 
   # ---------- Language-bound static labels ----------
   observeEvent(lang(), {
@@ -462,7 +487,7 @@ server <- function(input, output, session) {
 
     output$run<-renderUI(actionButton("run",label = tr("run_hfwi"), class = "btn-primary",
                                        `aria-label` = tr("aria_run_label")))
-    output$dl_ui <- renderUI(downloadButton("dl", tr("download_results")))
+    output$dl_ui <- renderUI(downloadButton_sl("dl", tr("download_results")))
 
     output$tab_output_title <- renderText(tr("tab_output"))
     output$tab_plot_title <- renderText(tr("tab_plot"))
@@ -530,7 +555,7 @@ server <- function(input, output, session) {
     ))
   })
   
-
+  observeEvent(input$csv, { tz_guess(NULL) }, ignoreInit = TRUE)
   tz_guess <- reactiveVal(NULL)
   observeEvent(input$tz_lookup_result, ignoreInit = TRUE, {
     if (is.character(input$tz_lookup_result) && nzchar(input$tz_lookup_result))
@@ -838,7 +863,7 @@ server <- function(input, output, session) {
       v <- suppressWarnings(stats::median(noon87$lat, na.rm = TRUE))
       if (is.finite(v)) v else NA_real_
     } else NA_real_
-    print(head(noon87,10))
+    # print(head(noon87,10))
     # -------- Call daily_fwi() from ng/old_cffdrs.r --------
     out <- tryCatch({
       daily_fwi(
@@ -929,6 +954,7 @@ server <- function(input, output, session) {
     dt_col <- attr(df, "dt_col")
     num_cols <- names(df)[vapply(df, is.numeric, logical(1))]
     raw_choices <- setdiff(num_cols, dt_col)
+    print(raw_choices)
     if (length(raw_choices) == 0L) {
       updateSelectizeInput(session, "plot_y_multi",
         choices = character(0), selected = character(0))
@@ -936,7 +962,7 @@ server <- function(input, output, session) {
     }
     prev <- isolate(input$plot_y_multi) %||% character(0)
     still_valid <- intersect(prev, raw_choices)
-    default_sel <- if (length(still_valid)) still_valid else head(raw_choices, min(3L, length(raw_choices)))
+    default_sel <- if (length(still_valid)) still_valid else raw_choices[c(20,21,22)]
     named_choices <- labelize_cols(raw_choices, type = "short")
     updateSelectizeInput(session, "plot_y_multi",
       choices = named_choices, selected = default_sel
@@ -1037,6 +1063,15 @@ server <- function(input, output, session) {
     plotly::ggplotly(p, tooltip = c("x","y","source","var_label")) |>
       plotly::config(displaylogo = FALSE, modeBarButtonsToRemove = c("select2d","lasso2d"))
   })
+  
+  output$has_tbl <- reactive({ isTruthy(run_model()) })
+  outputOptions(output, "has_tbl", suspendWhenHidden = FALSE)
+  
+  output$has_tbl87 <- reactive({
+    df87 <- daily_fwi_df()
+    isTruthy(df87) && NROW(df87) > 0
+  })
+  outputOptions(output, "has_tbl87", suspendWhenHidden = FALSE)
   
 
   # ---- Table, Download, Log ----
