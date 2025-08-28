@@ -91,6 +91,11 @@ server <- function(input, output, session) {
         "<strong>This should not be utilized for operational purposes and is intended as an exploratory tool.</strong></p>",
         "<p><strong>This application uses Microsoft Copilot, an AI-powered conversational assistant based on the GPT‑5 model, designed to help with information, code generation, and productivity tasks. Version: Copilot (GPT‑5, August 2025).</strong></p>"
       ),
+      calc_fwi87 = "Calculate FWI87?",
+      fwi25_results_title = "FWI25 (hourly) results",
+      fwi87_results_title = "FWI87 (daily) results",
+      legend_fwi25 = "FWI2025",
+      legend_fwi87 = "FWI87",
       plot_time_x = "Time",
       plot_sel_vars_over_time = "Selected variables over time",
       plot_var_over_time = "%s over time",
@@ -195,6 +200,11 @@ server <- function(input, output, session) {
         "<strong>Cette application ne doit pas être utilisée à des fins opérationnelles et est conçue comme un outil exploratoire.</strong></p>",
         "<p><strong>Cette application utilise Microsoft Copilot, un assistant conversationnel alimenté par l’IA basé sur le modèle GPT‑5, conçu pour fournir des informations, générer du code et améliorer la productivité. Version : Copilot (GPT‑5, août 2025).</strong></p>"
       ),
+      calc_fwi87 = "Calculer IFM87?",
+      fwi25_results_title = "Résultats IFM25 (horaire)",
+      fwi87_results_title = "Résultats IFM87 (quotidiens)",
+      legend_fwi25 = "IFM2025",
+      legend_fwi87 = "IFM87",
       plot_time_x = "Temps",
       plot_sel_vars_over_time = "Variables sélectionnées dans le temps",
       plot_var_over_time = "%s dans le temps",
@@ -304,6 +314,17 @@ server <- function(input, output, session) {
     ))
   }, ignoreInit = FALSE)
 
+  nearest_noon_per_day <- function(df, dt_col = "datetime", hour_col = "hour", tz = "UTC") {
+    stopifnot(dt_col %in% names(df), hour_col %in% names(df))
+    df$date_local <- as.Date(df[[dt_col]], tz = tz)
+    # For each local date, take the record closest to hour 12
+    dplyr::group_by(df, .data$date_local) |>
+      dplyr::slice_min(abs(.data[[hour_col]] - 12), with_ties = FALSE) |>
+      dplyr::ungroup()
+  }
+  
+  
+  
   # ---------- CSV read ----------
   raw_file <- reactive({
     req(input$csv)
@@ -401,6 +422,10 @@ server <- function(input, output, session) {
   observeEvent(lang(), {
     output$lbl_upload_csv <- renderText(tr("upload_csv"))
     output$lbl_column_mapping <- renderText(tr("column_mapping"))
+    
+    updateCheckboxInput(session, "calc_fwi87", label = tr("calc_fwi87"))
+    output$lbl_fwi87_title <- renderText(tr("fwi87_results_title"))
+    output$lbl_fwi25_title <- renderText(tr("fwi25_results_title"))
     output$csv_input_ui <- renderUI({
       fileInput(
         "csv",
@@ -719,6 +744,156 @@ server <- function(input, output, session) {
     validate(need(!is.null(out), "hFWI() call failed; check the Log tab for details."))
     data.table::as.data.table(as.data.frame(out))
   })
+  
+  
+  
+  ## --- Replace your entire daily_fwi_df() with this ---
+  daily_fwi_df <- eventReactive(input$run, {
+    if (!isTRUE(input$calc_fwi87)) return(NULL)
+    
+    # Pull shaped inputs and time zone
+    si <- shaped_input(); req(si, si$inputs)
+    tz_use <- if (is.null(si$tz) || !nzchar(si$tz)) "UTC" else si$tz
+    
+    # Hourly inputs used for daily accumulation (filtered the same way you run hFWI)
+    wx <- data.table::as.data.table(as.data.frame(si$inputs))
+    
+    # Ensure datetime exists and is POSIXct in the intended TZ
+    if (!"datetime" %in% names(wx))
+      stop("daily_fwi_df(): inputs must contain POSIXct 'datetime'.")
+    if (!inherits(wx$datetime, "POSIXt"))
+      stop("daily_fwi_df(): 'datetime' must be POSIXct/POSIXlt.")
+    
+    # Hour and local date in station TZ (be explicit)
+    if (!"hour" %in% names(wx)) wx[, hour := lubridate::hour(datetime)]
+    wx[, date := as.Date(datetime, tz = tz_use)]
+    
+    # Identify precipitation column (prefer 'rain' created by shaped_input())
+    pcol <- if ("rain" %in% names(wx)) "rain" else
+      if ("precip" %in% names(wx)) "precip" else
+        if ("prec" %in% names(wx)) "prec" else NULL
+    if (is.null(pcol))
+      stop("daily_fwi_df(): couldn't find precipitation column (rain/precip/prec).")
+    
+    # -------- Representative (near-)noon row per local day --------
+    noon87 <- data.table::as.data.table(
+      nearest_noon_per_day(
+        as.data.frame(wx),
+        dt_col   = "datetime",
+        hour_col = "hour",
+        tz       = tz_use
+      )
+    )
+    # Local date of the (near-)noon row
+    noon87[, date := as.Date(datetime, tz = tz_use)]
+    
+    # -------- Interval-based noon→noon accumulation (robust) --------
+    # For each day D, define window [D-1 13:00, D 12:00] in station TZ
+    noon87[, `:=`(
+      start = as.POSIXct(paste0(format(date - 1L, "%Y-%m-%d"), " 13:00:00"), tz = tz_use),
+      end   = as.POSIXct(paste0(format(date,        "%Y-%m-%d"), " 12:00:00"), tz = tz_use)
+    )]
+    
+    # Prepare hourly table for fast non-equi join
+    data.table::setkey(wx, datetime)
+    
+    # Non-equi join: sum precip over each [start, end] window
+    acc <- wx[
+      noon87,
+      on = .(datetime >= start, datetime <= end),
+      allow.cartesian = TRUE,
+      .(
+        rain_24 = sum(get(pcol), na.rm = TRUE),
+        n_hours = sum(!is.na(get(pcol)))
+      ),
+      by = .EACHI
+    ]
+    
+    # Attach accumulation to the (near-)noon rows
+    noon87[, `:=`(rain_24 = acc$rain_24, n_hours = acc$n_hours)]
+    
+    # Keep the precip measured at the noon row (optional transparency)
+    if (pcol %in% names(noon87)) {
+      noon87[, rain_hr := get(pcol)]
+    } else {
+      noon87[, rain_hr := NA_real_]
+    }
+    
+    # Provide the daily function with standard precip names = 24-h total
+    noon87[, `:=`(
+      rain   = rain_24,
+      precip = rain_24,
+      prec   = rain_24
+    )]
+    
+    # Provide date parts expected by some daily_fwi() implementations
+    noon87[, `:=`(
+      yr  = lubridate::year(datetime),
+      mon = lubridate::month(datetime),
+      day = lubridate::day(datetime)
+    )]
+    
+    # Representative latitude (median over rows if available)
+    lat_val <- if ("lat" %in% names(noon87)) {
+      v <- suppressWarnings(stats::median(noon87$lat, na.rm = TRUE))
+      if (is.finite(v)) v else NA_real_
+    } else NA_real_
+    print(head(noon87,10))
+    # -------- Call daily_fwi() from ng/old_cffdrs.r --------
+    out <- tryCatch({
+      daily_fwi(
+        noon87,
+        init       = data.frame(ffmc = input$ffmc0, dmc = input$dmc0, dc = input$dc0, lat = lat_val),
+        batch      = TRUE,
+        out        = "all",
+        lat.adjust = TRUE,
+        uppercase  = FALSE
+      )
+    }, error = function(e) NULL)
+    if (is.null(out)) return(NULL)
+    
+    # -------- Normalize & attach rain_24 / n_hours for display/QA --------
+    df87 <- as.data.frame(out)
+    names(df87) <- tolower(names(df87))
+    
+    # Ensure a datetime column exists for ordering/plotting
+    if (!"datetime" %in% names(df87) && all(c("yr", "mon", "day") %in% names(df87))) {
+      df87$datetime <- lubridate::make_datetime(
+        year = as.integer(df87$yr),
+        month = as.integer(df87$mon),
+        day   = as.integer(df87$day),
+        hour  = 12L,
+        tz    = tz_use
+      )
+    }
+    df87$date <- as.Date(df87$datetime, tz = tz_use)
+    
+    # Preserve any precip column returned by daily_fwi() as 'precip_df87' (for auditing)
+    d87 <- data.table::as.data.table(df87)
+    pcols_out <- intersect(names(d87), c("rain","precip","prec","prcp","rf"))
+    if (length(pcols_out) > 0) data.table::setnames(d87, pcols_out[1], "precip_df87")
+    
+    # Join our computed noon→noon total and completeness count
+    d87 <- d87[
+      noon87[, .(date, rain_24, n_hours)],
+      on = "date"
+    ]
+    # Provide a canonical display column name
+    d87[, precip_12to12 := rain_24]
+    
+    # Order chronologically if possible
+    ord <- try(order(d87$datetime), silent = TRUE)
+    if (!inherits(ord, "try-error")) d87 <- d87[ord]
+    
+    as.data.frame(d87)
+  })
+  
+  
+  
+  
+  
+  
+  
 
   # ---- Plot data & choices ----
   data_for_plot <- reactive({
@@ -772,56 +947,97 @@ server <- function(input, output, session) {
     if (identical(input$main_tabs, "Plot")) populate_plot_choices()
   }, ignoreInit = FALSE)
 
-  # ---- Render plot ----
-  output$plot_ts <- renderPlot({
+  output$plot_ts <- plotly::renderPlotly({
     df <- data_for_plot()
     dt_col <- attr(df, "dt_col")
     req(length(input$plot_y_multi) >= 1)
     yvars <- unique(input$plot_y_multi)
+    
+    # Base dataset: either inputs or hFWI results (as before)
     keep_cols <- unique(c(dt_col, yvars))
     df_small <- df[, keep_cols, drop = FALSE]
     ord <- try(order(df_small[[dt_col]]), silent = TRUE)
     if (!inherits(ord, "try-error")) df_small <- df_small[ord, , drop = FALSE]
+    
+    # Long format for the primary source (inputs or FWI2025 results)
     long_df <- df_small |>
-      tidyr::pivot_longer(cols = tidyselect::all_of(yvars),
-                          names_to = "variable", values_to = "value") |>
+      tidyr::pivot_longer(cols = tidyselect::all_of(yvars), names_to = "variable", values_to = "value") |>
       dplyr::filter(!is.na(.data$value))
     req(nrow(long_df) > 0)
-
-    # Decimate points for very large series
-    N <- nrow(long_df)
-    if (N > 20000) {
-      keep <- unique(floor(seq(1, N, length.out = 8000)))
-      long_df <- long_df[keep, , drop = FALSE]
-    }
-
+    
+    # Labeling
     var_label_levels <- vapply(yvars, label_for_col, character(1), type = "short")
-    long_df$var_label <- vapply(as.character(long_df$variable),
-                                label_for_col, character(1), type = "short")
+    long_df$var_label <- vapply(as.character(long_df$variable), label_for_col, character(1), type = "short")
     long_df$var_label <- factor(long_df$var_label, levels = var_label_levels)
-
-    ncol_facets <- {
-      val <- input$facet_ncol
-      if (is.null(val) || is.na(val) || val < 1) 1L else as.integer(val)
+    long_df$source <- tr("legend_fwi25") # "FWI2025" / "IFM2025"
+    
+    # Optional: add FWI87 overlay if (a) dataset is results and (b) daily_fwi_df() exists
+    overlay_df <- NULL
+    if (identical(input$plot_dataset, "results")) {
+      df87 <- daily_fwi_df()
+      if (!is.null(df87) && nrow(df87)) {
+        # Find a datetime column and align columns to yvars
+        dt87 <- if ("datetime" %in% names(df87)) "datetime" else NULL
+        if (is.null(dt87) && all(c("year","month","day") %in% names(df87))) {
+          si <- shaped_input()
+          df87$datetime <- lubridate::make_datetime(df87$year, df87$month, df87$day, hour = 12L, tz = si$tz)
+          dt87 <- "datetime"
+        }
+        if (!is.null(dt87)) {
+          # Only with variables present in both
+          common <- intersect(yvars, intersect(names(df87), names(df)))
+          if (length(common)) {
+            keep87 <- unique(c(dt87, common))
+            d87_small <- df87[, keep87, drop = FALSE]
+            overlay_df <- d87_small |>
+              tidyr::pivot_longer(cols = tidyselect::all_of(common), names_to = "variable", values_to = "value") |>
+              dplyr::filter(!is.na(.data$value))
+            if (nrow(overlay_df)) {
+              overlay_df$var_label <- vapply(as.character(overlay_df$variable), label_for_col, character(1), type = "short")
+              overlay_df$var_label <- factor(overlay_df$var_label, levels = var_label_levels)
+              overlay_df$source <- tr("legend_fwi87") # "FWI87" / "IFM87"
+            } else {
+              overlay_df <- NULL
+            }
+          }
+        }
+      }
     }
+    
+    # Build ggplot with your GoC theme, then convert to plotly
+    ncol_facets <- { val <- input$facet_ncol; if (is.null(val) || is.na(val) || val < 1) 1L else as.integer(val) }
     title_txt <- if (length(yvars) == 1)
-      sprintf(tr("plot_var_over_time"), label_for_col(yvars[1], type = "short"))
-    else
-      tr("plot_sel_vars_over_time")
-
-    p <- ggplot2::ggplot(long_df, ggplot2::aes(x = .data[[dt_col]], y = .data$value)) +
-
-      ggplot2::geom_line(colour = "#26374A", linewidth = 0.6, na.rm = TRUE) +
-      ggplot2::facet_wrap(~ var_label, ncol = ncol_facets,
-                 scales = if (isTRUE(input$facet_free_y)) "free_y" else "fixed") +
-      ggplot2::labs(x = tr("plot_time_x"), y = NULL, title = title_txt) +
+      sprintf(tr("plot_var_over_time"), label_for_col(yvars[1], type = "short")) else tr("plot_sel_vars_over_time")
+    
+    # GoC colours: primary line for FWI2025 and a contrasting GCDS red for FWI87
+    col_fwi25 <- "#26374A"  # GCDS primary
+    col_fwi87 <- "#BC3331"  # GCDS red
+    
+    p <- ggplot2::ggplot(long_df, ggplot2::aes(x = .data[[dt_col]], y = .data$value, colour = .data$source, linetype = .data$source)) +
+      ggplot2::geom_line(linewidth = 0.6, na.rm = TRUE) +
+      {
+        if (nrow(long_df) < 20000) ggplot2::geom_point(size = 0.8, alpha = 0.7, na.rm = TRUE) else NULL
+      } +
+      {
+        if (!is.null(overlay_df)) {
+          ggplot2::geom_line(
+            data = overlay_df,
+            ggplot2::aes(x = .data$datetime, y = .data$value, colour = .data$source, linetype = .data$source),
+            linewidth = 0.8, na.rm = TRUE
+          )
+        } else NULL
+      } +
+      ggplot2::facet_wrap(~ var_label, ncol = ncol_facets, scales = if (isTRUE(input$facet_free_y)) "free_y" else "fixed") +
+      ggplot2::scale_colour_manual(values = c(`FWI2025` = col_fwi25, `IFM2025` = col_fwi25, `FWI87` = col_fwi87, `IFM87` = col_fwi87)) +
+      ggplot2::scale_linetype_manual(values = c(`FWI2025` = "solid", `IFM2025` = "solid", `FWI87` = "dashed", `IFM87` = "dashed")) +
+      ggplot2::labs(x = tr("plot_time_x"), y = NULL, title = title_txt, colour = NULL, linetype = NULL) +
       theme_goc()
-
-    if (nrow(long_df) < 20000) {
-      p <- p + ggplot2::geom_point(colour = "#26374A", size = 0.8, alpha = 0.7, na.rm = TRUE)
-    }
-    p
+    
+    # Convert to plotly while preserving facet layout and free-y
+    plotly::ggplotly(p, tooltip = c("x","y","source","var_label")) |>
+      plotly::config(displaylogo = FALSE, modeBarButtonsToRemove = c("select2d","lasso2d"))
   })
+  
 
   # ---- Table, Download, Log ----
   output$tbl <- DT::renderDT({
@@ -839,14 +1055,39 @@ server <- function(input, output, session) {
         dom = "Bfrtip",
         buttons = list(
           list(extend = "copy",  text = tr("dt_btn_copy")),
-          list(extend = "csv",   text = tr("dt_btn_csv")),
-          list(extend = "excel", text = tr("dt_btn_excel"))
+          list(extend = "csv",   text = tr("dt_btn_csv"),file='hFWI.csv'),
+          list(extend = "excel", text = tr("dt_btn_excel"),filename="hFWI.xlsx")
         ),
         processing = TRUE,
         language = dt_i18n()
       )
     )
   })
+  
+  output$tbl_fwi87 <- DT::renderDT({
+    df87 <- daily_fwi_df()
+    req(!is.null(df87), nrow(df87) > 0)
+    DT::datatable(
+      df87,
+      escape = TRUE,
+      filter = "top",
+      extensions = c("Buttons","Scroller"),
+      class = "display nowrap compact hover stripe gc-dt",
+      options = list(
+        pageLength = 25, scrollX = TRUE, deferRender = TRUE,
+        scrollY = 400, scroller = TRUE,
+        dom = "Bfrtip",
+        buttons = list(
+          list(extend = "copy",  text = tr("dt_btn_copy")),
+          list(extend = "csv",   text = tr("dt_btn_csv"),filename="dailyFWI.csv"),
+          list(extend = "excel", text = tr("dt_btn_excel"),filename="dailyFWI.xlsx")
+        ),
+        processing = TRUE,
+        language = dt_i18n()
+      )
+    )
+  })
+  
 
   safe_fwrite <- function(x, file) {
     tryCatch(data.table::fwrite(x, file),
@@ -860,43 +1101,211 @@ server <- function(input, output, session) {
 
   output$log <- renderPrint({
     si <- shaped_input()
-    cat("Rows read:", nrow(req(raw_file())), "
-")
+    
+    # ---- Original log content (kept) ----
+    cat("Rows read:", nrow(req(raw_file())), " \n")
     if (!is.null(si$start_date) && !is.na(si$start_date)) {
-      cat("Start-date filter (local):", as.character(si$start_date), "
-")
+      cat("Start-date filter (local):", as.character(si$start_date), " \n")
     } else {
-      cat("Start-date filter: (none)
-")
+      cat("Start-date filter: (none) \n")
     }
-    cat("Rows after filtering:", si$n_rows, "
-")
-    cat("Time zone used:", si$tz, "
-")
-    cat("GMT offset (hours) passed to make_inputs():", si$tz_offset, "
-")
-    cat("Standard %z probe:", si$diag_std_z, "
-")
+    cat("Rows after filtering:", si$n_rows, " \n")
+    cat("Time zone used:", si$tz, " \n")
+    cat("GMT offset (hours) passed to make_inputs():", si$tz_offset, " \n")
+    cat("Standard %z probe:", si$diag_std_z, " \n")
     if (!is.null(si$diag_modal_z) && nzchar(si$diag_modal_z)) {
-      cat("Modal %z:", si$diag_modal_z, "
-")
+      cat("Modal %z:", si$diag_modal_z, " \n")
     }
-    cat("Initial codes: FFMC =", input$ffmc0, " DMC =", input$dmc0, " DC =", input$dc0, "
-")
-    cat("hFWI() formals:
-")
+    cat("Initial codes: FFMC =", input$ffmc0, " DMC =", input$dmc0, " DC =", input$dc0, " \n")
+    
+    cat("hFWI() formals: \n")
     fml <- try(formals(hFWI), silent = TRUE)
     print(fml)
     argn <- if (inherits(fml, "try-error") || is.null(fml)) character(0) else names(fml)
     mapping <- if (all(c("df_wx","timezone") %in% argn)) "df_wx + timezone (NG)"
-      else if ("inputs" %in% argn) "inputs (legacy)"
-      else if ("df" %in% argn) "df (legacy)"
-      else "positional fallback / unknown"
-    cat("hFWI() call mapping -> ", mapping, "
-")
+    else if ("inputs" %in% argn) "inputs (legacy)"
+    else if ("df" %in% argn) "df (legacy)"
+    else "positional fallback / unknown"
+    cat("hFWI() call mapping -> ", mapping, " \n")
+    
     ng_commit <- tryCatch(readLines("ng/_ng_commit.txt", warn = FALSE)[1],
                           error = function(e) NA_character_)
-    if (isTRUE(nzchar(ng_commit))) cat("cffdrs-ng commit:", ng_commit, "
-")
+    if (isTRUE(nzchar(ng_commit))) cat("cffdrs-ng commit:", ng_commit, " \n")
+    
+    df87 <- daily_fwi_df()
+    if (is.null(df87)) {
+      cat("FWI87: not requested or not available\n")
+    } else {
+      cat("FWI87: rows =", nrow(df87), " (daily)\n")
+    }
+    print(head(df87,10))
+    # ---- Sanity checks ----
+    cat("\n--- Sanity check: noon→noon precipitation (from hourly inputs) ---\n")
+    
+    # Pull hourly inputs
+    tz_use <- if (is.null(si$tz) || !nzchar(si$tz)) "UTC" else si$tz
+    wx <- data.table::as.data.table(as.data.frame(si$inputs))
+    
+    # Ensure datetime/hour/date exist
+    if (!"datetime" %in% names(wx)) {
+      if (all(c("year","month","day","hour") %in% names(wx))) {
+        wx[, datetime := lubridate::make_datetime(
+          year  = as.integer(year),
+          month = as.integer(month),
+          day   = as.integer(day),
+          hour  = as.integer(hour),
+          tz    = tz_use
+        )]
+      } else {
+        cat("  (Skipping: couldn't find datetime or year/month/day/hour.)\n")
+        return(invisible())
+      }
+    }
+    if (!"hour" %in% names(wx)) wx[, hour := lubridate::hour(datetime)]
+    wx[, date := as.Date(datetime, tz = tz_use)]
+    
+    # Require an hourly precipitation column; shaped_input() creates 'rain'
+    if (!"rain" %in% names(wx)) {
+      pcol <- if ("precip" %in% names(wx)) "precip" else if ("prec" %in% names(wx)) "prec" else NULL
+      if (is.null(pcol)) {
+        cat("  (Skipping: couldn't find precipitation column 'rain'/'precip'/'prec'.)\n")
+        return(invisible())
+      } else {
+        data.table::setnames(wx, pcol, "rain")
+      }
+    }
+    
+    # Tag each hourly record to the daily bucket whose noon ENDS the window: (D-1, 13–23) ∪ (D, 00–12) -> D
+    wx[, for_date := ifelse(hour <= 12L, date, date + 1L)]
+    
+    # Compute 24-h sum and completeness indicators per day
+    daily_chk <- wx[, .(
+      rain_24  = sum(rain, na.rm = TRUE),
+      n_rows   = .N,
+      n_non_na = sum(!is.na(rain)),
+      n_prev   = sum(hour > 12L),
+      n_am     = sum(hour <= 12L)
+    ), by = for_date][order(for_date)]
+    data.table::setnames(daily_chk, "for_date", "date")
+    
+    # Show the first few days (date, 24-h total, completeness)
+    print(utils::head(daily_chk, 10))
+    
+    # Explicitly print a small sample breakdown for a few days
+    if (nrow(daily_chk)) {
+      show_dates <- daily_chk$date[seq_len(min(3L, nrow(daily_chk)))]
+      for (d in show_dates) {
+        part_prev <- wx[date == (d - 1) & hour > 12L, sum(rain, na.rm = TRUE)]
+        part_curr <- wx[date == d       & hour <= 12L, sum(rain, na.rm = TRUE)]
+        cat(sprintf("  %s -> prev(13–23)=%.2f  curr(00–12)=%.2f  total=%.2f\n",
+                    as.character(d), part_prev, part_curr, part_prev + part_curr))
+      }
+    }
+    
+    # Nearest-to-noon pick distribution (how far from 12:00 the rep. record is)
+    cat("\nNearest-to-noon selection Δhour (count):\n")
+    noon_tbl <- data.table::as.data.table(
+      nearest_noon_per_day(as.data.frame(wx), dt_col = "datetime", hour_col = "hour", tz = tz_use)
+    )
+    noon_tbl[, noon_hour := lubridate::hour(datetime)]
+    delta_tab <- sort(table(noon_tbl$noon_hour - 12L), decreasing = TRUE)
+    print(delta_tab)
+    
+    # Flag incomplete windows (< 24 hourly records in the noon→noon window)
+    bad <- daily_chk[n_non_na < 24L]
+    if (nrow(bad)) {
+      cat("\nWARNING: days with < 24 hourly precip values in the noon→noon window:\n")
+      print(utils::head(bad, 10))
+    } else {
+      cat("\nAll noon→noon windows have 24 hourly precip values.\n")
+    }
+    
+    # ---------------------------
+    # NEW: Comparison checks
+    # ---------------------------
+    tol <- 1e-6  # mm tolerance for floating-point equality
+    
+    cat("\n--- Comparison: values passed into daily_fwi() (reconstructed) ---\n")
+    # Reconstruct the inputs that daily_fwi_df() would have passed (rain := rain_24 on (near)‑noon rows)
+    #   1) same noon->noon aggregation (daily_chk$rain_24)
+    #   2) same (near)-noon selection per date
+    #   3) join the two => "rain_passed"
+    prec_sum <- daily_chk[, .(date, rain_24)]  # already computed
+    noon_pick <- data.table::as.data.table(
+      nearest_noon_per_day(as.data.frame(wx), dt_col = "datetime", hour_col = "hour", tz = tz_use)
+    )
+    noon_pick[, date := as.Date(datetime)]
+    noon_inputs <- prec_sum[noon_pick, on = "date"]  # adds rain_24 to noon picks
+    comp_passed <- merge(
+      noon_inputs[, .(date, rain_passed = rain_24)],
+      daily_chk[, .(date, rain_24)],
+      by = "date", all = TRUE
+    )
+    comp_passed[, diff := rain_passed - rain_24]
+    bad_passed <- comp_passed[is.finite(diff) & abs(diff) > tol]
+    if (nrow(bad_passed)) {
+      cat(sprintf("  MISMATCH: %d day(s) differ between reconstructed 'passed rain' and computed rain_24 (>|%g|). Showing up to 10:\n",
+                  nrow(bad_passed), tol))
+      print(utils::head(bad_passed, 10))
+    } else {
+      cat("  OK: reconstructed 'rain' passed to daily_fwi() equals computed noon→noon rain_24 for all days.\n")
+    }
+    
+    # If df87 output contains a precip column, compare that too
+    if (!is.null(df87)) {
+      cat("\n--- Comparison: df87 precip column (if present) vs rain_24 ---\n")
+      
+      # Build a Date column for df87 for joining
+      d87 <- data.table::as.data.table(df87)
+      if ("datetime" %in% names(d87)) {
+        d87[, date := as.Date(datetime)]
+      } else if (all(c("yr","mon","day") %in% names(d87))) {
+        d87[, date := as.Date(sprintf("%04d-%02d-%02d", as.integer(yr), as.integer(mon), as.integer(day)))]
+      } else {
+        d87[, date := as.Date(NA)]
+      }
+      
+      pcols87 <- intersect(names(d87), c("rain","precip","prec","prcp","rf"))
+      if (length(pcols87) > 0) {
+        pc <- pcols87[1]
+        comp_df87 <- merge(
+          d87[, .(date, precip_df87 = get(pc))],
+          daily_chk[, .(date, rain_24)],
+          by = "date", all.x = TRUE
+        )
+        comp_df87[, diff := precip_df87 - rain_24]
+        bad_df87 <- comp_df87[is.finite(diff) & abs(diff) > tol]
+        if (nrow(bad_df87)) {
+          cat(sprintf("  MISMATCH: %d day(s) differ between df87 '%s' and rain_24 (>|%g|). Showing up to 10:\n",
+                      nrow(bad_df87), pc, tol))
+          print(utils::head(bad_df87, 10))
+        } else {
+          cat(sprintf("  OK: df87 '%s' matches computed noon→noon rain_24 for all joined days.\n", pc))
+        }
+      } else {
+        cat("  Note: df87 contains no precipitation column (checked: rain/precip/prec/prcp/rf). Skipping df87 comparison.\n")
+      }
+    }
+    cat("\nLST sanity: standard offset (h) =", tz_standard_offset_hours(si$tz),
+        "  current sample %z =", format(head(si$inputs$datetime, 1), "%z"), "\n")
+    
+    # pick a date and show the window edges in LST vs clock
+    wx <- data.table::as.data.table(as.data.frame(si$inputs))
+    cur_off_h <- parse_z_to_hours(format(wx$datetime, "%z"))
+    std_off_h <- tz_standard_offset_hours(si$tz)
+    delta_h   <- cur_off_h - std_off_h
+    wx[, datetime_LST := datetime - lubridate::dhours(delta_h)]
+    wx[, hour_LST := lubridate::hour(datetime_LST)]
+    wx[, date_LST := as.Date(datetime_LST, tz = si$tz)]
+    wx[, for_date_LST := ifelse(hour_LST <= 12L, date_LST, date_LST + 1L)]
+    d <- wx$for_date_LST[which.max(wx$for_date_LST)]  # last day
+    cat("Example window for", as.character(d),
+        ": starts", min(wx[for_date_LST==d, datetime_LST]),
+        "ends", max(wx[for_date_LST==d, datetime_LST]), "\n")
+    
+    invisible(NULL)
+    
   })
+  
+  
 }

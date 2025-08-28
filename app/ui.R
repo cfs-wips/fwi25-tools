@@ -188,6 +188,7 @@ ui <- fluidPage(
           min = 0,
           step = 1
         ),
+        checkboxInput("calc_fwi87", label = "", value = TRUE),
         uiOutput("run"),
         uiOutput("dl_ui") # translated download button
       ),
@@ -202,7 +203,21 @@ ui <- fluidPage(
             tabPanel(
               title = textOutput("tab_output_title"),
               value = "Output",
-              DT::DTOutput("tbl", width = "100%")
+              tags$div(
+                role = 'region',
+                `arial-label` = "FWI25 results table",
+                h4(textOutput("lbl_fwi25_title")),
+                DT::DTOutput("tbl", width = "100%"),
+              ),
+              tags$hr(),
+              
+              tags$div(
+                role = "region",
+                `aria-label` = "FWI87 results table",
+                h4(textOutput("lbl_fwi87_title")),
+                DT::DTOutput("tbl_fwi87", width = "100%")
+              )
+              
             ),
             tabPanel(
               title = textOutput("tab_plot_title"),
@@ -234,6 +249,7 @@ ui <- fluidPage(
                     label = NULL,
                     value = 2,
                     min = 1,
+                    max=4,
                     step = 1
                   )
                 ),
@@ -241,7 +257,7 @@ ui <- fluidPage(
                   "facet_free_y", label = NULL, value = FALSE
                 ))
               ),
-              plotOutput("plot_ts", height = "520px")
+              plotly::plotlyOutput("plot_ts", height = "80vh")
             ),
             tabPanel(
               title = textOutput("tab_log_title"),
