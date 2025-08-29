@@ -119,3 +119,22 @@ table.dataTable.gc-dt.stripe tbody tr:nth-child(even) { background-color: #fafaf
   100% { background-position: -200% 0; } 
 }
 
+.gc-card{
+  padding:.5rem 1rem;
+  border:1px solid var(--gcds-border-default,#7D828B);
+  border-radius:6px;
+  background:#fff;
+  margin-bottom:1rem;
+  overflow: visible; /* let DataTables manage its own scroll */
+}
+/* Keep wrapper constrained to card width */
+.gc-card .dataTables_wrapper{ max-width:100%; }
+/* Prevent outer container from creating extra scrollbars */
+.gc-card .dataTables_wrapper .dataTables_scroll{ overflow:hidden; }
+/* Do the horizontal scroll here, within the card */
+.gc-card .dataTables_wrapper .dataTables_scrollBody{
+  overflow-x:auto !important;
+  width:100% !important;
+}
+/* Avoid forcing the card to expand; let DT compute widths and scroll horizontally */
+.gc-card table.dataTable{ width:100% !important; }
