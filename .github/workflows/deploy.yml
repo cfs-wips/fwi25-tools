@@ -27,8 +27,7 @@ jobs:
       - name: Install R packages via r-lib/actions
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          # Add anything your app/export needs. If your repo isn't an R package,
-          # use extra-packages to install explicitly:
+          # Add anything your app/export needs.
           extra-packages: |
             any::shinylive
             any::shiny
@@ -39,27 +38,49 @@ jobs:
             any::tidyr
             any::ggplot2
             any::shinycssloaders
-
+            any::cffdrs
 
       - name: Verify packages present
         shell: Rscript {0}
         run: |
-          cat("shinylive      :", as.character(packageVersion("shinylive")) , "\n")
-          cat("shiny          :", as.character(packageVersion("shiny"))     , "\n")
-          cat("DT             :", as.character(packageVersion("DT"))        , "\n")
+          cat("shinylive      :", as.character(packageVersion("shinylive")), "\n")
+          cat("shiny          :", as.character(packageVersion("shiny")), "\n")
+          cat("DT             :", as.character(packageVersion("DT")), "\n")
           cat("data.table     :", as.character(packageVersion("data.table")), "\n")
-          cat("dplyr          :", as.character(packageVersion("dplyr"))     , "\n")
-          cat("lubridate      :", as.character(packageVersion("lubridate")) , "\n")
-          cat("tidyr          :", as.character(packageVersion("tidyr"))     , "\n")
-          cat("tidyr          :", as.character(packageVersion("tidyr"))     , "\n")
-          cat("ggplot2        :", as.character(packageVersion("ggplot2"))   , "\n")
-          cat("shinycssloaders:", as.character(packageVersion("ggplot2"))   , "\n")
+          cat("dplyr          :", as.character(packageVersion("dplyr")), "\n")
+          cat("lubridate      :", as.character(packageVersion("lubridate")), "\n")
+          cat("tidyr          :", as.character(packageVersion("tidyr")), "\n")
+          cat("ggplot2        :", as.character(packageVersion("ggplot2")), "\n")
+          cat("shinycssloaders:", as.character(packageVersion("shinycssloaders")), "\n")
+          cat("cffdrs         :", as.character(packageVersion("cffdrs")), "\n")
 
-      - name: Export Shinylive site
+      - name: Export Shinylive site (with title + parent listener)
         shell: Rscript {0}
         run: |
           dir.create("docs", showWarnings = FALSE)
-          shinylive::export("app", "docs", wasm_packages = TRUE, max_filesize = "200M")
+
+          # Parent-page listener to update the tab title when app posts a message
+          include_head <- paste0(
+            "<script>",
+            "window.addEventListener('message', function(e){",
+            "  if(e && e.data && e.data.type==='set-title' && typeof e.data.title==='string'){",
+            "    try{ document.title = e.data.title; }catch(err){}",
+            "  }",
+            "}, false);",
+            "</script>"
+          )
+
+          shinylive::export(
+            "app", "docs",
+            wasm_packages = TRUE,
+            max_filesize = "200M",
+            template_params = list(
+              # Initial page title before your app runs (EN default)
+              title = "Hourly FWI (NG‑CFFDRS)",
+              # Inject the parent listener into <head> of docs/index.html
+              include_in_head = include_head
+            )
+          )
 
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
@@ -67,11 +88,11 @@ jobs:
           path: docs
 
   deploy:
+    needs: build
+    runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    needs: build
-    runs-on: ubuntu-latest
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
