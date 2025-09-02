@@ -10,14 +10,14 @@ source("ng/NG_FWI.r", local = TRUE)
 # ---- Helpers ----------------------------------------------------------------
 `%||%` <- function(a, b) if (is.null(a) || length(a) == 0L) b else a
 
-# Shinylive download workaround (server-side use)
+## Shinylive download workaround for Chromium browsers----
 downloadButton_sl <- function(...) {
   tag <- shiny::downloadButton(...)
   tag$attribs$download <- NULL
   tag
 }
 
-# Simple GoC theme for ggplot (GCDS colours/fonts)
+## Simple GoC theme for ggplot (GCDS colours/fonts) ----
 theme_goc <- function(base_size = 12, base_family = "Noto Sans") {
   primary <- "#26374A"  # GCDS primary background
   border  <- "#7D828B"  # GCDS border default
@@ -37,7 +37,7 @@ theme_goc <- function(base_size = 12, base_family = "Noto Sans") {
     )
 }
 
-# Label helpers / i18n --------------------------------------------------------
+## Label helpers / i18n -----
 labels <- list(
   en = list(
     title = "Hourly FWI (NG‑CFFDRS)",
@@ -247,14 +247,14 @@ labels <- list(
   )
 )
 
-# Find likely precip column name among common variants
+## Precip column finder ----
 find_precip_col <- function(cols) {
   cands <- c("rain","precip","prec","prcp","rf")
   hit <- cands[cands %in% cols]
   if (length(hit)) hit[1] else NULL
 }
 
-# Translation helpers ---------------------------------------------------------
+## Translation helpers ---------------------------------------------------------
 lang <- reactiveVal("en")
 observe({
   qs <- parseQueryString(session$clientData$url_search)
@@ -286,7 +286,7 @@ labelize_cols <- function(cols, type = c("short","long")){
 
 # Server ----------------------------------------------------------------------
 server <- function(input, output, session){
-  # Language toggle (instant, no reload)
+  # Language toggle (instant, no reload) ----
   output$lang_toggle <- renderUI({
     cur <- lang()
     actionLink(
@@ -301,12 +301,12 @@ server <- function(input, output, session){
     shiny::updateQueryString(paste0("?lang=", lang()), mode = "push")
   })
 
-  # Initial labels/outputs
+  # Initial labels/outputs translations ----
   output$app_title      <- renderText(tr("title"))
   output$app_subtitle   <- renderText("")
   output$skip_link_txt  <- renderText(tr("skip_to_main"))
 
-  # Keep <html lang> and key aria-labels synced with current language
+  ## Keep <html lang> and key aria-labels synced with current language---
   observeEvent(lang(), {
     session$sendCustomMessage('set-lang', list(lang = lang()))
     session$sendCustomMessage('set-aria-labels', list(
@@ -317,7 +317,7 @@ server <- function(input, output, session){
     session$sendCustomMessage('set-title', tr('title'))
   }, ignoreInit = FALSE)
 
-  # Utility: nearest-to-noon record per local day ----------------------------
+  # Nearest-to-noon record per local day ----------------------------
   nearest_noon_per_day <- function(df, dt_col = "datetime", hour_col = "hour", tz = "UTC"){
     stopifnot(dt_col %in% names(df), hour_col %in% names(df))
     df$date_local <- as.Date(df[[dt_col]], tz = tz)
@@ -459,7 +459,6 @@ server <- function(input, output, session){
       choices = setNames(c("results","inputs"), c(tr("data_src_results"), tr("data_src_inputs"))),
       selected = input$plot_dataset %||% "results"
     )
-    updateSelectizeInput(session, "plot_y_multi", label = tr("vars_to_plot"), options = list(placeholder = tr("vars_placeholder")))
     updateNumericInput(session, "facet_ncol", label = tr("facets_per_row"))
     updateCheckboxInput(session, "facet_free_y", label = tr("free_y"))
   }, ignoreInit = FALSE)
@@ -779,7 +778,8 @@ server <- function(input, output, session){
     as.data.frame(d87)
   })
 
-  # ---- Plot data & choices --------------------------------------------------
+  # ---- Plot data & choices and plots --------------------------------------------------
+  ## Plot data ----
   data_for_plot <- reactive({
     req(shaped_input(), input$plot_dataset)
     df <- if (identical(input$plot_dataset, "inputs")) as.data.frame(shaped_input()$inputs) else as.data.frame(run_model())
@@ -801,7 +801,7 @@ server <- function(input, output, session){
     attr(df, "dt_col") <- dt_col
     df
   })
-
+  ## Plot Choices ----
   populate_plot_choices <- function(){
     df <- data_for_plot(); dt_col <- attr(df, "dt_col")
     num_cols <- names(df)[vapply(df, is.numeric, logical(1))]
@@ -823,9 +823,10 @@ server <- function(input, output, session){
     named_choices <- labelize_cols(raw_choices, type = "short")
     updateSelectizeInput(session, "plot_y_multi", choices = named_choices, selected = unique(default_sel))
   }
-  observeEvent(list(data_for_plot(), input$plot_dataset), { populate_plot_choices() }, ignoreInit = FALSE)
-  observeEvent(input$main_tabs, { if (identical(input$main_tabs, "Plot")) populate_plot_choices() }, ignoreInit = FALSE)
+  observeEvent(list(data_for_plot(), input$plot_dataset), { populate_plot_choices() }, ignoreInit = T)
+  observeEvent(input$main_tabs, { if (identical(input$main_tabs, "Plot")) populate_plot_choices() }, ignoreInit = T)
 
+  ## Plot ----
   output$plot_ts <- plotly::renderPlotly({
     df <- data_for_plot(); dt_col <- attr(df, "dt_col")
     req(length(input$plot_y_multi) >= 1)
@@ -844,7 +845,7 @@ server <- function(input, output, session){
     long_df$var_label <- vapply(as.character(long_df$variable), label_for_col, character(1), type = "short")
     long_df$var_label <- factor(long_df$var_label, levels = var_label_levels)
     long_df$source <- tr("legend_fwi25")
-
+    long_df<- long_df |> dplyr::mutate(dplyr::across(dplyr::where(is.numeric),~ round(.x,3)))
     overlay_df <- NULL
     if (identical(input$plot_dataset, "results")) {
       df87 <- daily_fwi_df()
@@ -870,6 +871,7 @@ server <- function(input, output, session){
         }
       }
     }
+    overlay_df<- overlay_df |> dplyr::mutate(dplyr::across(dplyr::where(is.numeric),~ round(.x,3)))
 
     ncol_facets <- { val <- input$facet_ncol; if (is.null(val) || is.na(val) || val < 1) 1L else as.integer(val) }
     title_txt <- if (length(yvars) == 1) sprintf(tr("plot_var_over_time"), label_for_col(yvars[1], type = "short")) else tr("plot_sel_vars_over_time")
@@ -880,22 +882,26 @@ server <- function(input, output, session){
       ggplot2::geom_line(linewidth = 0.6, na.rm = TRUE) +
       { if (nrow(long_df) < 20000) ggplot2::geom_point(size = 0.8, alpha = 0.7, na.rm = TRUE) else NULL } +
       { if (!is.null(overlay_df)) ggplot2::geom_line(data = overlay_df, ggplot2::aes(x = .data$datetime, y = .data$value, colour = .data$source, linetype = .data$source), linewidth = 0.8, na.rm = TRUE) else NULL } +
-      ggplot2::facet_wrap(~ var_label, ncol = ncol_facets, scales = if (isTRUE(input$facet_free_y)) "free_y" else "fixed") +
+      ggplot2::facet_wrap(~var_label, ncol = ncol_facets, scales = if (isTRUE(input$facet_free_y)) "free_y" else "fixed") +
       ggplot2::scale_colour_manual(values = c(`FWI2025` = col_fwi25, `IFM2025` = col_fwi25, `FWI87` = col_fwi87, `IFM87` = col_fwi87)) +
       ggplot2::scale_linetype_manual(values = c(`FWI2025` = "solid", `IFM2025` = "solid", `FWI87` = "dashed", `IFM87` = "dashed")) +
       ggplot2::labs(x = tr("plot_time_x"), y = NULL, title = title_txt, colour = NULL, linetype = NULL) +
       theme_goc()
 
-    plotly::ggplotly(p, tooltip = c("x","y","source","var_label")) |>
-      plotly::config(displaylogo = FALSE, modeBarButtonsToRemove = c("select2d","lasso2d"))
+    plotly::ggplotly(p, tooltip = c("x","y","colour")) |>
+      plotly::config(displaylogo = FALSE, modeBarButtonsToRemove = c("select2d","lasso2d")) |> 
+      plotly::plotly_build()
   })
 
+ 
+
+  # ---- Tables, Download, Log -----------------------------------------------
+  ## Tables -----
+  
   output$has_tbl   <- reactive({ isTruthy(run_model()) })
   output$has_tbl87 <- reactive({ df87 <- daily_fwi_df(); isTruthy(df87) && NROW(df87) > 0 })
   outputOptions(output, "has_tbl", suspendWhenHidden = FALSE)
   outputOptions(output, "has_tbl87", suspendWhenHidden = FALSE)
-
-  # ---- Tables, Download, Log -----------------------------------------------
   output$tbl <- DT::renderDT({
     req(run_model())
     df <- run_model()
@@ -936,16 +942,18 @@ server <- function(input, output, session){
       )
     )
   })
-
+  ## Downloads ----
   safe_fwrite <- function(x, file){
     tryCatch(data.table::fwrite(x, file), error = function(e) utils::write.csv(x, file, row.names = FALSE))
   }
+  
   output$dl <- downloadHandler(
-    filename = function() sprintf("hfwi_%s.csv", basename(input$csv$name %||% "results")),
+    filename = function() sprintf("hfwi_%s", basename(input$csv$name %||% "results")),
     content  = function(file) safe_fwrite(run_model(), file),
     contentType = "text/csv"
   )
 
+  ## Logs ----
   output$log <- renderPrint({
     si <- shaped_input()
     cat("Rows read:", nrow(req(raw_file())), "\n")
@@ -965,7 +973,7 @@ server <- function(input, output, session){
 
     df87 <- daily_fwi_df(); if (is.null(df87)) cat("FWI87: not requested or not available\n") else cat("FWI87: rows =", nrow(df87), " (daily)\n"); print(utils::head(df87,10))
 
-    # --- Sanity checks (precip noon->noon) ----------------------------------
+    ### --- Sanity checks (precip noon->noon) ----------------------------------
     cat("\n--- Sanity check: noon→noon precipitation (from hourly inputs) ---\n")
     tz_use <- if (is.null(si$tz) || !nzchar(si$tz)) "UTC" else si$tz
     wx <- data.table::as.data.table(as.data.frame(si$inputs))
