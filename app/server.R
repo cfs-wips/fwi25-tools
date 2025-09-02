@@ -866,12 +866,13 @@ server <- function(input, output, session){
               overlay_df$var_label <- vapply(as.character(overlay_df$variable), label_for_col, character(1), type = "short")
               overlay_df$var_label <- factor(overlay_df$var_label, levels = var_label_levels)
               overlay_df$source <- tr("legend_fwi87")
+              overlay_df<- overlay_df |> dplyr::mutate(dplyr::across(dplyr::where(is.numeric),~ round(.x,3)))
             } else overlay_df <- NULL
           }
         }
       }
     }
-    overlay_df<- overlay_df |> dplyr::mutate(dplyr::across(dplyr::where(is.numeric),~ round(.x,3)))
+    
 
     ncol_facets <- { val <- input$facet_ncol; if (is.null(val) || is.na(val) || val < 1) 1L else as.integer(val) }
     title_txt <- if (length(yvars) == 1) sprintf(tr("plot_var_over_time"), label_for_col(yvars[1], type = "short")) else tr("plot_sel_vars_over_time")
