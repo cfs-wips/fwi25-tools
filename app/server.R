@@ -861,7 +861,9 @@ server <- function(input, output, session){
             d87_small <- df87[, keep87, drop = FALSE]
             overlay_df <- d87_small |>
               tidyr::pivot_longer(cols = tidyselect::all_of(common), names_to = "variable", values_to = "value") |>
-              dplyr::filter(!is.na(.data$value))
+              dplyr::filter(!is.na(.data$value)) |>
+              overlay_df<- overlay_df |> 
+              dplyr::mutate(dplyr::across(dplyr::where(is.numeric),~ round(.x,3)))
             if (nrow(overlay_df)) {
               overlay_df$var_label <- vapply(as.character(overlay_df$variable), label_for_col, character(1), type = "short")
               overlay_df$var_label <- factor(overlay_df$var_label, levels = var_label_levels)
@@ -870,8 +872,9 @@ server <- function(input, output, session){
           }
         }
       }
+     
     }
-    overlay_df<- overlay_df |> dplyr::mutate(dplyr::across(dplyr::where(is.numeric),~ round(.x,3)))
+    
 
     ncol_facets <- { val <- input$facet_ncol; if (is.null(val) || is.na(val) || val < 1) 1L else as.integer(val) }
     title_txt <- if (length(yvars) == 1) sprintf(tr("plot_var_over_time"), label_for_col(yvars[1], type = "short")) else tr("plot_sel_vars_over_time")
