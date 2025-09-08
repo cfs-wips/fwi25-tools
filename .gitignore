@@ -6,3 +6,6 @@ docs/
 site/
 *.csv
 *.Rproj
+server.txt
+ui.txt
+app/structured_input.csv
