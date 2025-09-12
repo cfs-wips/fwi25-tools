@@ -254,38 +254,40 @@ find_precip_col <- function(cols) {
   if (length(hit)) hit[1] else NULL
 }
 
-## Translation helpers ---------------------------------------------------------
-lang <- reactiveVal("en")
-observe({
-  qs <- parseQueryString(session$clientData$url_search)
-  l  <- tolower(qs[["lang"]]) %||% "en"
-  if (l %in% c("en","fr")) lang(l) else lang("en")
-})
-tr <- function(id) {
-  L <- lang()
-  out <- labels[[L]][[id]]
-  if (is.null(out)) id else out
-}
-aliases_active <- function(type = c("short","long")){
-  type <- match.arg(type)
-  L <- lang()
-  key <- if (type == "short") "aliases_short" else "aliases_long"
-  out <- labels[[L]][[key]]
-  if (is.null(out)) character(0) else out
-}
-label_for_col <- function(nm, type = c("short","long")){
-  type <- match.arg(type)
-  ali <- aliases_active(type)
-  key <- tolower(nm)
-  if (length(ali) && key %in% names(ali)) ali[[key]] else nm
-}
-labelize_cols <- function(cols, type = c("short","long")){
-  type <- match.arg(type)
-  stats::setNames(cols, vapply(cols, label_for_col, character(1), type = type))
-}
+
 
 # Server ----------------------------------------------------------------------
 server <- function(input, output, session){
+  ## Translation helpers ---------------------------------------------------------
+  lang <- reactiveVal("en")
+  observe({
+    qs <- parseQueryString(session$clientData$url_search)
+    l  <- tolower(qs[["lang"]]) %||% "en"
+    if (l %in% c("en","fr")) lang(l) else lang("en")
+  })
+  tr <- function(id) {
+    L <- lang()
+    out <- labels[[L]][[id]]
+    if (is.null(out)) id else out
+  }
+  aliases_active <- function(type = c("short","long")){
+    type <- match.arg(type)
+    L <- lang()
+    key <- if (type == "short") "aliases_short" else "aliases_long"
+    out <- labels[[L]][[key]]
+    if (is.null(out)) character(0) else out
+  }
+  label_for_col <- function(nm, type = c("short","long")){
+    type <- match.arg(type)
+    ali <- aliases_active(type)
+    key <- tolower(nm)
+    if (length(ali) && key %in% names(ali)) ali[[key]] else nm
+  }
+  labelize_cols <- function(cols, type = c("short","long")){
+    type <- match.arg(type)
+    stats::setNames(cols, vapply(cols, label_for_col, character(1), type = type))
+  }
+  
   # Language toggle (instant, no reload) ----
   output$lang_toggle <- renderUI({
     cur <- lang()
@@ -374,45 +376,70 @@ server <- function(input, output, session){
     if (length(m) > 0) m[1] else ""
   }
 
+  # --- Mapping UI (always visible; disabled until CSV) ---
   output$mapping_ui <- renderUI({
-    L <- lang() # dep for FR/EN refresh
-    if (is.null(input$csv)) {
-      return(
-        tags$div(class = "mapping-block",
-          helpText(tr("mapping_help")),
-          tags$div(class = "skeleton", style = "width: 60%"),
-          tags$div(class = "skeleton", style = "width: 100%; height: .5rem;"),
-          tags$div(class = "skeleton", style = "width: 100%; height: .5rem;"),
-          tags$div(class = "skeleton", style = "width: 100%; height: .5rem;"),
-          tags$div(class = "skeleton", style = "width: 100%; height: .5rem;")
-        )
-      )
-    }
-    df <- raw_file(); cols <- names(df)
-    tags$div(class = "mapping-block",
+    L <- lang()  # re-render on language switch
+    
+    has_file <- !is.null(input$csv)
+    cols <- if (has_file) names(raw_file()) else character(0)
+    
+    # Helpers: keep a blank selected when no file is present
+    pick_sel <- function(val) if (has_file) val else ""
+    fc <- function(x, include_blank = TRUE) if (include_blank) c("", x) else x
+    
+    # Accessibility: <fieldset disabled> blocks mouse & keyboard interactions
+    disabled_attr <- if (!has_file) NA else NULL
+    aria_state <- if (!has_file) "true" else "false"
+    
+    tags$fieldset(
+      class = "mapping-ui-fieldset",
+      disabled = disabled_attr,            # present when disabled
+      `aria-disabled` = aria_state,
+      
       helpText(tr("mapping_help")),
+      
       selectInput(
         "col_datetime", tr("col_datetime"),
-        choices = c("", cols), selected = find_col(cols, c("datetime","timestamp"))
+        choices  = fc(cols),
+        selected = pick_sel(find_col(cols, c("datetime","timestamp")))
       ),
+      
       fluidRow(
-        column(3, selectInput("col_year",  tr("col_year"),  choices = c("", cols), selected = find_col(cols, c("year","yr","y")))),
-        column(3, selectInput("col_month", tr("col_month"), choices = c("", cols), selected = find_col(cols, c("month","mon","m")))),
-        column(3, selectInput("col_day",   tr("col_day"),   choices = c("", cols), selected = find_col(cols, c("day","dy","d")))),
-        column(3, selectInput("col_hour",  tr("col_hour"),  choices = c("", cols), selected = find_col(cols, c("hour","hr","h"))))
+        column(3, selectInput("col_year",  tr("col_year"),  choices = fc(cols),
+                              selected = pick_sel(find_col(cols, c("year","yr","y"))))),
+        column(3, selectInput("col_month", tr("col_month"), choices = fc(cols),
+                              selected = pick_sel(find_col(cols, c("month","mon","m"))))),
+        column(3, selectInput("col_day",   tr("col_day"),   choices = fc(cols),
+                              selected = pick_sel(find_col(cols, c("day","dy","d"))))),
+        column(3, selectInput("col_hour",  tr("col_hour"),  choices = fc(cols),
+                              selected = pick_sel(find_col(cols, c("hour","hr","h")))))
       ),
+      
       fluidRow(
-        column(3, selectInput("col_temp", tr("col_temp"), choices = cols, selected = find_col(cols, c("temp","temperature","t")))),
-        column(3, selectInput("col_rh",   tr("col_rh"),   choices = c("", cols), selected = find_col(cols, c("rh","relative humidity","relative.humidity","relative_humidity","humidity")))),
-        column(3, selectInput("col_ws",   tr("col_ws"),   choices = c("", cols), selected = find_col(cols, c("ws","windspeed","wind_speed","wind.speed","wind speed")))),
-        column(3, selectInput("col_rain", tr("col_rain"), choices = c("", cols), selected = find_col(cols, c("rain","precip","prec","precip_mm","prec_mm","rain_mm"))))
+        column(3, selectInput("col_temp", tr("col_temp"), choices = fc(cols),
+                              selected = pick_sel(find_col(cols, c("temp","temperature","t"))))),
+        column(3, selectInput("col_rh",   tr("col_rh"),   choices = fc(cols),
+                              selected = pick_sel(find_col(cols, c("rh","relative humidity",
+                                                                   "relative.humidity",
+                                                                   "relative_humidity","humidity"))))),
+        column(3, selectInput("col_ws",   tr("col_ws"),   choices = fc(cols),
+                              selected = pick_sel(find_col(cols, c("ws","windspeed",
+                                                                   "wind_speed","wind.speed","wind speed"))))),
+        column(3, selectInput("col_rain", tr("col_rain"), choices = fc(cols),
+                              selected = pick_sel(find_col(cols, c("rain","precip","prec",
+                                                                   "precip_mm","prec_mm","rain_mm")))))
       ),
+      
       fluidRow(
-        column(6, selectInput("col_lat", tr("col_lat"), choices = c("", cols), selected = find_col(cols, c("lat","latitude")))),
-        column(6, selectInput("col_lon", tr("col_lon"), choices = c("", cols), selected = find_col(cols, c("lon","long","longitude"))))
+        column(6, selectInput("col_lat", tr("col_lat"), choices = fc(cols),
+                              selected = pick_sel(find_col(cols, c("lat","latitude"))))),
+        column(6, selectInput("col_lon", tr("col_lon"), choices = fc(cols),
+                              selected = pick_sel(find_col(cols, c("lon","long","longitude")))))
       )
     )
   })
+  
+  
 
   # ---- Language-bound static labels ----------------------------------------
   observeEvent(lang(), {

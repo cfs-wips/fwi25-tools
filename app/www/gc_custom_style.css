@@ -105,19 +105,7 @@ table.dataTable.gc-dt.stripe tbody tr:nth-child(even) { background-color: #fafaf
   min-height: 320px; /* tune as needed for your mapping controls */
 }
 
-/* Lightweight skeleton lines */
-.skeleton {
-  background: linear-gradient(90deg, #EEE, #F7F7F7, #EEE);
-  background-size: 200% 100%;
-  animation: shine 1.2s linear infinite;
-  border-radius: 4px; 
-  height: 1rem; 
-  margin: .35rem 0;
-}
-@keyframes shine { 
-  0% { background-position: 200% 0; } 
-  100% { background-position: -200% 0; } 
-}
+
 
 .gc-card{
   padding:.5rem 1rem;
@@ -138,3 +126,15 @@ table.dataTable.gc-dt.stripe tbody tr:nth-child(even) { background-color: #fafaf
 }
 /* Avoid forcing the card to expand; let DT compute widths and scroll horizontally */
 .gc-card table.dataTable{ width:100% !important; }
+
+/* Subtle style when mapping controls are disabled */
+.mapping-ui-fieldset[disabled] {
+  opacity: 0.6;
+}
+.mapping-ui-fieldset[disabled] * {
+  cursor: not-allowed !important;
+}
+/* If selectize is active, prevent stray clicks while disabled */
+.mapping-ui-fieldset[disabled] .selectize-control {
+  pointer-events: none;
+}
