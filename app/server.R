@@ -45,6 +45,8 @@ labels <- list(
     csv_has_header = "CSV has header",
     csv_button_label = "Browse...",
     csv_place_holder = "No file selected",
+    lat_label = "Latitude (°)",
+    lon_label = "Longitude (°)",
     column_mapping = "Column mapping",
     time_zone = "Time zone",
     tz_fixed_one = "Specify one time zone for all rows",
@@ -149,6 +151,8 @@ labels <- list(
     csv_button_label = "Parcourir...",
     csv_place_holder = "Aucun fichier sélectionné",
     column_mapping = "Correspondance des colonnes",
+    lat_label = "Latitude (°)",
+    lon_label = "Longitude (°)",
     time_zone = "Fuseau horaire",
     tz_fixed_one = "Utiliser un seul fuseau horaire pour toutes les lignes",
     tz_auto_infer = "Déduire un fuseau horaire à partir de la latitude/longitude",
@@ -352,21 +356,36 @@ server <- function(input, output, session){
   # Prefill start_date from first row if possible
   observeEvent(raw_file(), {
     df <- raw_file()
-    datetime_col <- names(df)[grepl("datetime|timestamp", names(df), ignore.case = TRUE)][1]
+    cols <- names(df)
+    lat_col <- find_col(cols, c("lat","latitude"))
+    lon_col <- find_col(cols, c("lon","long","longitude"))
+    datetime_col <- find_col(cols, c("datetime","timestamp"))
+    lat_default <- suppressWarnings(as.numeric(if (nzchar(lat_col)) df[[lat_col]][1] else NA))
+    lon_default <- suppressWarnings(as.numeric(if (nzchar(lon_col)) df[[lon_col]][1] else NA))
+    datetime_col <-suppressWarnings(as.numeric(if (nzchar(datetime_col)) df[[datetime_col]][1] else NA))
+    if (!is.finite(lat_default)) lat_default <- 55
+    if (!is.finite(lon_default)) lon_default <- -120
+
+    updateNumericInput(session, "manual_lat", value = lat_default)
+    updateNumericInput(session, "manual_lon", value = lon_default)
+    
+
     first_date <- NULL
-    if (!is.na(datetime_col)) {
+    if (!is.na(datetime_col)==T) {
       first_date <- suppressWarnings(as.Date(df[[datetime_col]][1]))
     } else {
-      ycol <- names(df)[grepl("^year$|^yr$",   names(df), ignore.case = TRUE)][1]
-      mcol <- names(df)[grepl("^month$|^mon$", names(df), ignore.case = TRUE)][1]
-      dcol <- names(df)[grepl("^day$|^dy$",    names(df), ignore.case = TRUE)][1]
+      ycol <- find_col(cols, c("year","yr"))
+      mcol <- find_col(cols, c("month","mon"))
+      dcol <- find_col(cols, c("day","dy"))
+
       if (!any(is.na(c(ycol, mcol, dcol)))) {
         first_date <- as.Date(paste(df[[ycol]][1], df[[mcol]][1], df[[dcol]][1]), format = "%Y %m %d")
       }
     }
-    if (!is.null(first_date) && !is.na(first_date)) {
+    if (!is.null(first_date)==T && !is.na(first_date)==T) {
       updateDateInput(session, "start_date", value = first_date)
     }
+    
   })
 
   # ---- Mapping UI -----------------------------------------------------------
@@ -435,6 +454,23 @@ server <- function(input, output, session){
                               selected = pick_sel(find_col(cols, c("lat","latitude"))))),
         column(6, selectInput("col_lon", tr("col_lon"), choices = fc(cols),
                               selected = pick_sel(find_col(cols, c("lon","long","longitude")))))
+      ),
+      
+      fluidRow(
+        column(
+          6,
+          numericInput(
+            "manual_lat", tr("lat_label"),
+            value = 55, min = -90, max = 90, step = 0.0001
+          )
+        ),
+        column(
+          6,
+          numericInput(
+            "manual_lon", tr("lon_label"),
+            value = -120, min = -180, max = 180, step = 0.0001
+          )
+        )
       )
     )
   })
@@ -448,7 +484,8 @@ server <- function(input, output, session){
     updateCheckboxInput(session, "calc_fwi87", label = tr("calc_fwi87"))
     output$lbl_fwi87_title     <- renderText(tr("fwi87_results_title"))
     output$lbl_fwi25_title     <- renderText(tr("fwi25_results_title"))
-
+    updateNumericInput(session, "manual_lat", label = tr("lat_label"))
+    updateNumericInput(session, "manual_lon", label = tr("lon_label"))
     output$csv_input_ui <- renderUI({
       fileInput("csv", label = NULL, buttonLabel = tr("csv_button_label"), placeholder = tr("csv_place_holder"), accept = c(".csv","text/csv"))
     })
@@ -548,6 +585,13 @@ server <- function(input, output, session){
     if (isTruthy(nm) && nzchar(nm) && nm %in% names(df)) df[[nm]] else NULL
   }
   representative_latlon <- function(df){
+    mlat <- suppressWarnings(as.numeric(input$manual_lat))
+    mlon <- suppressWarnings(as.numeric(input$manual_lon))
+    if (length(mlat) == 1 && is.finite(mlat) &&
+        length(mlon) == 1 && is.finite(mlon)) {
+      return(c(lat = mlat, lon = mlon))
+    }
+    
     lat <- lon <- NULL
     if (!missing(df) && !is.null(df)) {
       lat <- suppressWarnings(as.numeric(get_col(df, input$col_lat)))
@@ -560,7 +604,16 @@ server <- function(input, output, session){
     }
     c(lat = NA_real_, lon = NA_real_)
   }
-
+  observeEvent(list(input$manual_lat, input$manual_lon), {
+    if (identical(input$tz_mode, "auto")) {
+      mlat <- suppressWarnings(as.numeric(input$manual_lat))
+      mlon <- suppressWarnings(as.numeric(input$manual_lon))
+      if (is.finite(mlat) && is.finite(mlon)) {
+        session$sendCustomMessage("tz_lookup", list(lat = mlat, lon = mlon))
+      }
+    }
+  }, ignoreInit = TRUE)
+  
   observeEvent(list(input$tz_mode, input$run, input$csv), ignoreInit = FALSE, {
     if (identical(input$tz_mode, "auto")) {
       df <- try(raw_file(), silent = TRUE)
@@ -593,8 +646,13 @@ server <- function(input, output, session){
     validate(
       need(is.finite(input$ffmc0) && input$ffmc0 >= 0 && input$ffmc0 <= 101, tr("err_ffmc_range")),
       need(is.finite(input$dmc0)  && input$dmc0  >= 0, tr("err_dmc_range")),
-      need(is.finite(input$dc0)   && input$dc0   >= 0, tr("err_dc_range"))
+      need(is.finite(input$dc0)   && input$dc0   >= 0, tr("err_dc_range")),
+      need(is.finite(input$manual_lat) && input$manual_lat >= -90 && input$manual_lat <= 90,
+           "Latitude must be between -90 and 90."),
+      need(is.finite(input$manual_lon) && input$manual_lon >= -180 && input$manual_lon <= 180,
+           "Longitude must be between -180 and 180.")
     )
+    
 
     # timezone to use
     tz_use <- switch(input$tz_mode,
@@ -668,8 +726,8 @@ server <- function(input, output, session){
       rh    = as.numeric(get_col(df, input$col_rh)),
       ws    = as.numeric(get_col(df, input$col_ws)),
       rain  = as.numeric(get_col(df, input$col_rain)),
-      lat   = suppressWarnings(as.numeric(get_col(df, input$col_lat))),
-      long  = suppressWarnings(as.numeric(get_col(df, input$col_lon))),
+      lat = rep(suppressWarnings(as.numeric(input$manual_lat)), nrow(df)),
+      long = rep(suppressWarnings(as.numeric(input$manual_lon)), nrow(df)),
       tz    = tz_use
     )
 
@@ -683,7 +741,7 @@ server <- function(input, output, session){
     list(inputs = inputs, tz = tz_use, tz_offset = offset_hours, start_date = input$start_date,
          n_rows = nrow(wx), diag_std_z = std_z, diag_modal_z = z_mode)
   })
-
+  
   # ---- Model run ------------------------------------------------------------
   run_model <- reactive({
     req(shaped_input())
