@@ -1,12 +1,13 @@
 # R/modules/mod_timezone.R
-mod_timezone_ui <- function(id){
+mod_timezone_ui <- function(id) {
   ns <- NS(id)
   tagList(
     tags$fieldset(
       tags$legend(id = ns("legend_tz_mode"), textOutput(ns("lbl_time_zone"))),
       radioButtons(ns("tz_mode"), label = NULL, choices = c("fixed" = "fixed", "auto" = "auto"), selected = "auto")
     ),
-    conditionalPanel(sprintf("input['%s'] == 'fixed'", ns("tz_mode")),
+    conditionalPanel(
+      sprintf("input['%s'] == 'fixed'", ns("tz_mode")),
       selectInput(ns("fixed_tz"), label = NULL, choices = OlsonNames(), selected = "UTC")
     ),
     tags$fieldset(
@@ -17,21 +18,25 @@ mod_timezone_ui <- function(id){
   )
 }
 
-mod_timezone_server <- function(id, tr, manual_lat, manual_lon, browser_tz, lookup_result){
-  moduleServer(id, function(input, output, session){
+mod_timezone_server <- function(id, tr, manual_lat, manual_lon, browser_tz, lookup_result) {
+  moduleServer(id, function(input, output, session) {
     tz_guess <- reactiveVal(NULL)
 
     output$lbl_time_zone <- renderText(tr("time_zone"))
     output$lbl_tz_offset_policy <- renderText(tr("tz_offset_policy"))
 
     observe({
-      updateRadioButtons(session, "tz_mode", label = NULL,
-        choices = setNames(c("fixed","auto"), c(tr("tz_fixed_one"), tr("tz_auto_infer"))),
-        selected = input$tz_mode %||% "auto")
+      updateRadioButtons(session, "tz_mode",
+        label = NULL,
+        choices = setNames(c("fixed", "auto"), c(tr("tz_fixed_one"), tr("tz_auto_infer"))),
+        selected = input$tz_mode %||% "auto"
+      )
       updateSelectInput(session, "fixed_tz", label = tr("tz_select"))
-      updateRadioButtons(session, "tz_offset_policy", label = NULL,
-        choices = setNames(c("std","modal"), c(tr("tz_offset_std"), tr("tz_offset_modal"))),
-        selected = input$tz_offset_policy %||% "std")
+      updateRadioButtons(session, "tz_offset_policy",
+        label = NULL,
+        choices = setNames(c("std", "modal"), c(tr("tz_offset_std"), tr("tz_offset_modal"))),
+        selected = input$tz_offset_policy %||% "std"
+      )
     })
 
     observeEvent(lookup_result(), ignoreInit = TRUE, {
@@ -40,26 +45,34 @@ mod_timezone_server <- function(id, tr, manual_lat, manual_lon, browser_tz, look
     })
 
     output$tz_out <- renderPrint({
-      tz <- tz_guess()
+      tz <- tz_use()
       if (is.null(tz)) tr("tz_not_inferred") else paste(tr("iana_prefix"), tz)
     })
 
     # Trigger JS tz lookup when manual coords change (in auto mode)
     observeEvent(list(input$tz_mode, manual_lat(), manual_lon()), ignoreInit = TRUE, {
-      if (identical(input$tz_mode, "auto")){
-        la <- suppressWarnings(as.numeric(manual_lat())); lo <- suppressWarnings(as.numeric(manual_lon()))
-        if (is.finite(la) && is.finite(lo)) session$sendCustomMessage("tz_lookup", list(lat = la, lon = lo))
-        else {
-          bt <- browser_tz(); if (is.character(bt) && nzchar(bt)) tz_guess(bt)
+      if (identical(input$tz_mode, "auto")) {
+        la <- suppressWarnings(as.numeric(manual_lat()))
+        lo <- suppressWarnings(as.numeric(manual_lon()))
+        if (is.finite(la) && is.finite(lo)) {
+          session$sendCustomMessage("tz_lookup", list(lat = la, lon = lo))
+        } else {
+          bt <- browser_tz()
+          if (is.character(bt) && nzchar(bt)) tz_guess(bt)
         }
       }
     })
 
     # Expose selected tz
     tz_use <- reactive({
-      if (identical(input$tz_mode, "fixed")) input$fixed_tz else {
-        if (!is.null(tz_guess())) tz_guess() else {
-          bt <- browser_tz(); if (is.character(bt) && nzchar(bt)) bt else NULL
+      if (identical(input$tz_mode, "fixed")) {
+        input$fixed_tz
+      } else {
+        if (!is.null(tz_guess())) {
+          tz_guess()
+        } else {
+          bt <- browser_tz()
+          if (is.character(bt) && nzchar(bt)) bt else NULL
         }
       }
     })

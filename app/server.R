@@ -9,30 +9,34 @@ source("ng/NG_FWI.r", local = TRUE)
 # Source modules
 for (f in list.files("R/modules", pattern = "\\.R$", full.names = TRUE)) source(f, local = TRUE)
 
-server <- function(input, output, session){
+server <- function(input, output, session) {
   # i18n / language & UI texts
   i18n <- mod_i18n_server("i18n", session_title = TRUE)
-  tr <- i18n$tr; dt_i18n <- i18n$dt_i18n; label_for_col <- i18n$label_for_col
+  tr <- i18n$tr
+  dt_i18n <- i18n$dt_i18n
+  label_for_col <- i18n$label_for_col
 
   # Tabs titles via i18n
   output$tab_output_title <- renderText(tr("tab_output"))
-  output$tab_plot_title   <- renderText(tr("tab_plot"))
-  output$tab_log_title    <- renderText(tr("tab_log"))
+  output$tab_plot_title <- renderText(tr("tab_plot"))
+  output$tab_log_title <- renderText(tr("tab_log"))
 
   # Inputs modules
-  up   <- mod_upload_server("upload", tr)
-  map  <- mod_mapping_server("mapping", tr, cols = up$cols, df = up$raw_file)
-  tz   <- mod_timezone_server("tz", tr,
-            manual_lat = map$manual_lat, manual_lon = map$manual_lon,
-            browser_tz = reactive(input$tz_browser),
-            lookup_result = reactive(input$tz_lookup_result))
-  fil  <- mod_filter_server("filter", tr, raw_file = up$raw_file, mapping = map)
+  up <- mod_upload_server("upload", tr)
+  map <- mod_mapping_server("mapping", tr, cols = up$cols, df = up$raw_file)
+  tz <- mod_timezone_server("tz", tr,
+    manual_lat = map$manual_lat, manual_lon = map$manual_lon,
+    browser_tz = reactive(input$tz_browser),
+    lookup_result = reactive(input$tz_lookup_result)
+  )
+  fil <- mod_filter_server("filter", tr, raw_file = up$raw_file, mapping = map)
   init <- mod_init_server("init", tr)
 
   # Engine (compute on Run)
   acts <- mod_actions_server("actions", tr, results = reactive(eng$run_model()), csv_name = up$csv_name)
-  eng  <- mod_engine_server("engine",
-            raw_file = up$raw_file, mapping = map, tz = tz, filt = fil, init = init, tr = tr)
+  eng <- mod_engine_server("engine",
+    raw_file = up$raw_file, mapping = map, tz = tz, filt = fil, init = init, tr = tr
+  )
 
   # Outputs
   mod_results_table_server("results_table", tr, dt_i18n, results = reactive(eng$run_model()))
