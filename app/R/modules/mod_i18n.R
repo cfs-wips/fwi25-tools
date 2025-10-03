@@ -97,6 +97,111 @@ i18n_labels <- list(
     err_non_numeric_cols = "These columns are not numeric: %s",
     err_tz_invalid = "Selected time zone is not available on this system.",
     iana_prefix = "IANA time zone:"
+  ),
+  fr = list(
+    title = "IFF horaire (NG‑CFFDRS)",
+    upload_csv = "Téléverser le fichier CSV météo",
+    csv_has_header = "Le CSV comporte une ligne d’en‑tête",
+    csv_button_label = "Parcourir...",
+    csv_place_holder = "Aucun fichier sélectionné",
+    column_mapping = "Correspondance des colonnes",
+    lat_label = "Latitude (°)",
+    lon_label = "Longitude (°)",
+    time_zone = "Fuseau horaire",
+    tz_fixed_one = "Utiliser un seul fuseau horaire pour toutes les lignes",
+    tz_auto_infer = "Déduire un fuseau horaire à partir de la latitude/longitude",
+    tz_select = "Fuseau horaire",
+    tz_offset_policy = "Décalage pour les calculs solaires",
+    tz_offset_std = "Standard (ignorer l’heure d’été)",
+    tz_offset_modal = "À partir des données (modal; peut inclure l’heure d’été)",
+    filter = "Filtre",
+    drop_rows_prior = "Supprimer les lignes antérieures à (date locale) :",
+    drop_rows_help = "Le cas échéant, les lignes dont la date locale est antérieure à cette valeur sont supprimées avant hFWI().",
+    init_ffmc = "FFMC initial",
+    init_dmc  = "DMC initial",
+    init_dc   = "DC initial",
+    run_hfwi = "Exécuter hFWI()",
+    download_results = "Télécharger les résultats (CSV)",
+    tab_output = "Résultats",
+    tab_plot   = "Graphique",
+    tab_log    = "Journal",
+    data_source = "Source de données",
+    data_src_results = "Résultats (sortie hFWI)",
+    data_src_inputs  = "Entrées (météo)",
+    vars_to_plot = "Variables à tracer (par facettes)",
+    vars_placeholder = "Sélectionner une ou plusieurs colonnes numériques…",
+    facets_per_row = "Nombre de facettes par ligne",
+    free_y = "Axe des y libre par facette",
+    mapping_help = "Faites correspondre vos colonnes à ce qu’exige NG‑CFFDRS. Fournissez soit une colonne Date‑heure unique, soit Année/Mois/Jour/Heure.",
+    col_datetime = "Date‑heure (facultatif)",
+    col_year = "Année",
+    col_month = "Mois",
+    col_day = "Jour",
+    col_hour = "Heure (0–23)",
+    col_temp = "Température (°C)",
+    col_rh   = "HR (%)",
+    col_ws   = "Vent (km/h)",
+    col_rain = "Pluie (mm)",
+    col_lat  = "Latitude (°)",
+    col_lon  = "Longitude (°)",
+    modal_title = "Avis!",
+    modal_close = "Fermer",
+    modal_body_html = paste0(
+      "<p>Cette petite application R Shiny utilise le code PG‑IFM du dépôt public ",
+      "<a href=\"https://github.com/nrcan-cfs-fire/cffdrs-ng/tree/main\" target=\"_blank\" rel=\"noopener noreferrer\">cffdrs‑ng</a> ",
+      "sur GitHub pour générer des résultats d'indice horaire (IFM2025). ",
+      "Les utilisateurs peuvent téléverser un fichier météorologique horaire et spécifier des intrants clés – tels que les codes de démarrage et la date de début – pour calculer les valeurs IFM2025.</p>",
+      "<p>L'application est encore en cours de développement. Les mises à jour des codes, le traitement des intrants et le formatage des résultats peuvent changer au fur et à mesure que le système IFM2025 continue d'évoluer. ",
+      "Les commentaires sont les bienvenus et les utilisateurs doivent anticiper les bogues et les problèmes potentiels, car le code et l'application sont en cours de développement. ",
+      "<strong>Cette application ne doit pas être utilisée à des fins opérationnelles et est conçue comme un outil exploratoire.</strong></p>",
+      "<p><strong>Cette application utilise Microsoft Copilot, un assistant conversationnel alimenté par l’IA basé sur le modèle GPT‑5, conçu pour fournir des informations, générer du code et améliorer la productivité. Version : Copilot (GPT‑5, août 2025).</strong></p>"
+    ),
+    calc_fwi87 = "Calculer IFM87?",
+    fwi25_results_title = "Résultats IFM25 (horaire)",
+    fwi87_results_title = "Résultats IFM87 (quotidiens)",
+    legend_fwi25 = "IFM2025",
+    legend_fwi87 = "IFM87",
+    plot_time_x = "Temps",
+    plot_sel_vars_over_time = "Variables sélectionnées dans le temps",
+    plot_var_over_time = "%s dans le temps",
+    dt_btn_copy = "Copier",
+    dt_btn_csv  = "CSV",
+    dt_btn_excel= "Excel",
+    dt_sSearch = "Rechercher :",
+    dt_sLength = "Afficher _MENU_ éléments",
+    dt_sInfo   = "Affichage de _START_ à _END_ sur _TOTAL_ éléments",
+    dt_sInfoEmpty = "Affichage de 0 à 0 sur 0 élément",
+    dt_sInfoFilt  = "(filtré à partir de _MAX_ éléments au total)",
+    dt_sZero = "Aucun enregistrement correspondant trouvé",
+    dt_sProc = "Traitement...",
+    dt_pag_first = "Premier",
+    dt_pag_prev  = "Précédent",
+    dt_pag_next  = "Suivant",
+    dt_pag_last  = "Dernier",
+    aliases_short = c(
+      ffmc = "FFMC", dmc = "DMC", dc = "DC", isi = "IPI (ISI)", bui = "BUI", fwi = "IFM (FWI)", dsr = "IGQ (DSR)"
+    ),
+    aliases_long = c(
+      ffmc = "Indice d’humidité des combustibles fins (FFMC)",
+      dmc  = "Indice d’humidité de la couche organique (DMC)",
+      dc   = "Indice de sécheresse (DC)",
+      isi  = "Indice de propagation initiale (IPI/ISI)",
+      bui  = "Indice d’accumulation (BUI)",
+      fwi  = "Indice forêt‑météo (IFM/FWI)",
+      dsr  = "Indice de gravité quotidienne (IGQ/DSR)"
+    ),
+    # Accessibility & errors
+    skip_to_main = "Passer au contenu principal",
+    aria_app_label = "Application IFF horaire",
+    aria_tabs_label = "Onglets de sortie principaux",
+    aria_run_label = "Exécuter hFWI",
+    tz_not_inferred = "Fuseau horaire non encore déduit.",
+    err_ffmc_range = "FFMC doit être entre 0 et 101.",
+    err_dmc_range  = "Le DMC doit être un nombre positif ou nul.",
+    err_dc_range   = "Le DC doit être un nombre positif ou nul.",
+    err_non_numeric_cols = "Ces colonnes ne sont pas numériques : %s",
+    err_tz_invalid = "Le fuseau horaire sélectionné n’est pas disponible sur ce système.",
+    iana_prefix = "Fuseau IANA :"
   )
 )
 
@@ -147,10 +252,12 @@ mod_i18n_ui <- function(id){
 
 mod_i18n_server <- function(id, session_title = TRUE){
   moduleServer(id, function(input, output, session){
+    ns   <- session$ns
     lang <- reactiveVal("en")
     observe({
       qs <- parseQueryString(session$clientData$url_search)
-      l <- tolower(qs[["lang"]]) %||% "en"
+      # robust fallback without %||%
+      l  <- tolower(if (!is.null(qs[["lang"]])) qs[["lang"]] else "en")
       if (l %in% c("en","fr")) lang(l) else lang("en")
     })
 
@@ -172,11 +279,15 @@ mod_i18n_server <- function(id, session_title = TRUE){
     # Language toggle
     output$lang_toggle <- renderUI({
       cur <- lang()
-      actionLink("toggle_lang", label = if (cur == "fr") "English" else "Français",
+      actionLink(ns("toggle_lang"), 
+                 label = if (cur == "fr") "English" else "Français",
                  class = "link-unstyled",
                  `aria-label` = if (cur == "fr") "Switch to English" else "Passer en français")
     })
-    observeEvent(input$toggle_lang, { lang(if (lang() == "fr") "en" else "fr"); updateQueryString(paste0("?lang=", lang()), mode = "push") })
+    observeEvent(input$toggle_lang, { 
+      lang(if (lang() == "fr") "en" else "fr")
+      updateQueryString(paste0("?lang=", lang()), mode = "push") 
+    })
 
     # Static label outputs
     output$app_title <- renderText(tr("title"))

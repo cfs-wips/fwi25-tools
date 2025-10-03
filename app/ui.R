@@ -13,6 +13,17 @@ ui <- fluidPage(
     tags$script(HTML(
       "Shiny.addCustomMessageHandler('set-title', function(msg){try{document.title = msg; if(window.parent && window.parent !== window){window.parent.postMessage({type:'set-title', title: msg}, '*');}}catch(e){}});"
     )),
+    tags$script(
+      HTML(
+              "
+        Shiny.addCustomMessageHandler('set-aria-labels', function(msg){
+          try{
+            if (msg && msg.app)  document.getElementById('main-content')?.setAttribute('aria-label', msg.app);
+            if (msg && msg.tabs) document.getElementById('tabs-region')?.setAttribute('aria-label', msg.tabs);
+          } catch(e){}
+        });
+      "
+    )),
     # GCDS fonts & tokens
     tags$link(rel = "stylesheet", href = "https://cdn.jsdelivr.net/npm/@cdssnc/gcds-fonts@1.0.3/dist/gcds-fonts.css"),
     tags$link(rel = "stylesheet", href = "https://cdn.design-system.alpha.canada.ca/cdn/gcds/alpha/0.13.0/tokens.css"),
