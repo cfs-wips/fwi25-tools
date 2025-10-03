@@ -38,10 +38,10 @@ mod_mapping_server <- function(id, tr, cols, df) {
             column(3, selectInput(session$ns("col_hour"), tr("col_hour"), choices = fc(cc), selected = pick_sel(find_col(cc, c("hour", "hr", "h")))))
           ),
           fluidRow(
-            column(3, selectInput(session$ns("col_temp"), tr("col_temp"), choices = fc(cc), selected = pick_sel(find_col(cc, c("temp", "temperature", "t"))))),
-            column(3, selectInput(session$ns("col_rh"), tr("col_rh"), choices = fc(cc), selected = pick_sel(find_col(cc, c("rh", "relative humidity", "relative.humidity", "relative_humidity", "humidity"))))),
-            column(3, selectInput(session$ns("col_ws"), tr("col_ws"), choices = fc(cc), selected = pick_sel(find_col(cc, c("ws", "windspeed", "wind_speed", "wind.speed", "wind speed"))))),
-            column(3, selectInput(session$ns("col_rain"), tr("col_rain"), choices = fc(cc), selected = pick_sel(find_col(cc, c("rain", "prec", "precip", "precip_mm", "prec_mm", "rain_mm", "rf")))))
+            column(3, selectInput(session$ns("col_temp"), tr("col_temp"), choices = fc(cc), selected = pick_sel(find_col(cc, c("temp","temperature","t"))))),
+            column(3, selectInput(session$ns("col_rh"),   tr("col_rh"),   choices = fc(cc), selected = pick_sel(find_col(cc, c("rh","relative humidity","relative.humidity","relative_humidity","humidity"))))),
+            column(3, selectInput(session$ns("col_ws"),   tr("col_ws"),   choices = fc(cc), selected = pick_sel(find_col(cc, c("ws","windspeed","wind_speed","wind.speed","wind speed","Wspd","Wnd","Wndspd"))))),
+            column(3, selectInput(session$ns("col_rain"), tr("col_rain"), choices = fc(cc), selected = pick_sel(find_col(cc, c("rain","precip","precip_mm","prec_mm","rain_mm","rf","rn")))))
           ),
           fluidRow(
             column(6, numericInput(session$ns("manual_lat"), tr("lat_label"), value = 55, min = -90, max = 90, step = 0.0001)),
