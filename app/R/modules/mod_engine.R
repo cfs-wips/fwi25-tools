@@ -89,7 +89,8 @@ mod_engine_server <- function(id, raw_file, mapping, tz, filt, init, tr, run_cli
         rain = as.numeric(get_col(df, mapping$col_rain())),
         lat  = rep(suppressWarnings(as.numeric(mapping$manual_lat())), nrow(df)),
         long = rep(suppressWarnings(as.numeric(mapping$manual_lon())), nrow(df)),
-        tz   = tz_use
+        tz   = tz_use,
+        id   = df$id
       )
       validate(need(all(!is.na(wx$temp)), "Temperature has NA after parsing."))
       validate(need(all(!is.na(wx$rh)),   "RH has NA after parsing."))
