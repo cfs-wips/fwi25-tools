@@ -98,7 +98,13 @@ mod_engine_server <- function(id, raw_file, mapping, tz, filt, init, tr, run_cli
 
       list(inputs = wx, tz = tz_use, tz_offset = offset_hours, start_date = filt$start_date(), n_rows = nrow(wx), diag_std_z = std_z, diag_modal_z = z_mode)
     }) |>
-      bindEvent(run_click())
+      bindEvent(run_click(),
+                mapping$manual_lat(),
+                mapping$manual_lon(),
+                tz$tz_offset_policy(),
+                filt$start_date(),
+                tz$tz_mode()
+                )
 
     run_model <- reactive({
       req(shaped_input())
@@ -211,11 +217,14 @@ mod_engine_server <- function(id, raw_file, mapping, tz, filt, init, tr, run_cli
     }) |> 
       bindEvent(
         run_click(),
-        init$ffmc0,
-        init$dmc0,
-        init$dc0,
+        init$ffmc0(),
+        init$dmc0(),
+        init$dc0(),
+        mapping$manual_lat(),
+        mapping$manual_lon(),
         tz$tz_offset_policy(),
-        filt$start_date()
+        filt$start_date(),
+        tz$tz_mode()
       )
 
     return(list(
