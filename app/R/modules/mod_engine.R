@@ -1,7 +1,11 @@
 # R/modules/mod_engine.R
-mod_engine_server <- function(id, raw_file, mapping, tz, filt, init, tr){
+mod_engine_server <- function(id, raw_file, mapping, tz, filt, init, tr, run_click){
   moduleServer(id, function(input, output, session){
-
+    source("R/modules/mod_utils.R",local=TRUE)
+    source("ng/util.r", local = TRUE)
+    source("ng/make_inputs.r", local = TRUE)
+    source("ng/NG_FWI.r", local = TRUE)
+    
     has_explicit_zone <- function(x){
       if (is.null(x)) return(FALSE)
       x <- as.character(x)
@@ -10,7 +14,7 @@ mod_engine_server <- function(id, raw_file, mapping, tz, filt, init, tr){
 
     get_col <- function(df, nm){ if (isTruthy(nm) && nzchar(nm) && nm %in% names(df)) df[[nm]] else NULL }
 
-    shaped_input <- eventReactive(input$run, {
+    shaped_input <- reactive({
       validate(need(!is.null(raw_file()), "Upload a CSV first."))
       df <- tibble::as_tibble(raw_file())
       needed <- c(mapping$col_temp(), mapping$col_rh(), mapping$col_ws(), mapping$col_rain())
@@ -25,6 +29,7 @@ mod_engine_server <- function(id, raw_file, mapping, tz, filt, init, tr){
         need(is.finite(mapping$manual_lat()) && mapping$manual_lat() >= -90 && mapping$manual_lat() <= 90, "Latitude must be between -90 and 90."),
         need(is.finite(mapping$manual_lon()) && mapping$manual_lon() >= -180 && mapping$manual_lon() <= 180, "Longitude must be between -180 and 180.")
       )
+      # print(init$ffmc0())
       tz_use <- tz$tz_use()
       validate(need(tz_use %in% OlsonNames(), tr("err_tz_invalid")))
 
@@ -92,7 +97,8 @@ mod_engine_server <- function(id, raw_file, mapping, tz, filt, init, tr){
       validate(need(all(!is.na(wx$rain)), "Rain has NA after parsing."))
 
       list(inputs = wx, tz = tz_use, tz_offset = offset_hours, start_date = filt$start_date(), n_rows = nrow(wx), diag_std_z = std_z, diag_modal_z = z_mode)
-    })
+    }) |>
+      bindEvent(run_click())
 
     run_model <- reactive({
       req(shaped_input())
@@ -121,9 +127,10 @@ mod_engine_server <- function(id, raw_file, mapping, tz, filt, init, tr){
       data.table::as.data.table(as.data.frame(out))
     })
 
-    daily_fwi_df <- eventReactive(input$run, {
+    daily_fwi_df <- reactive({
       if (!isTRUE(init$calc_fwi87())) return(NULL)
-      si <- shaped_input(); req(si, si$inputs)
+      si <- shaped_input()
+      req(si, si$inputs)
       tz_use <- if (is.null(si$tz) || !nzchar(si$tz)) "UTC" else si$tz
       wx <- data.table::as.data.table(as.data.frame(si$inputs))
       req("datetime" %in% names(wx) && inherits(wx$datetime, "POSIXt"))
@@ -174,9 +181,11 @@ mod_engine_server <- function(id, raw_file, mapping, tz, filt, init, tr){
         lat = lat_val,
         long = long_val
       )
-      init_df <- data.frame(ffmc = init$ffmc0(), dmc = init$dmc0(), dc = init$dc0(), lat = lat_val)
+      
       out <- tryCatch({
-        cffdrs::fwi(input = as.data.frame(daily_in), init = init_df, batch = TRUE, out = "all", lat.adjust = TRUE, uppercase = FALSE)
+        cffdrs::fwi(input = as.data.frame(daily_in), 
+                    init = data.frame(ffmc = init$ffmc0(), dmc = init$dmc0(), dc = init$dc0(), lat = lat_val), 
+                    batch = TRUE, out = "all", lat.adjust = TRUE, uppercase = FALSE)
       }, error = function(e){ message("cffdrs::fwi() failed: ", conditionMessage(e)); NULL })
       if (is.null(out)) return(NULL)
       df87 <- as.data.frame(out); names(df87) <- tolower(names(df87))
@@ -199,7 +208,15 @@ mod_engine_server <- function(id, raw_file, mapping, tz, filt, init, tr){
       d87 <- d87[ noon_tbl[, .(date, precip_12to12 = prec_24, n_hours)], on = "date" ]
       ord <- try(order(d87$datetime), silent = TRUE); if (!inherits(ord, "try-error")) d87 <- d87[ord]
       as.data.frame(d87)
-    })
+    }) |> 
+      bindEvent(
+        run_click(),
+        init$ffmc0,
+        init$dmc0,
+        init$dc0,
+        tz$tz_offset_policy(),
+        filt$start_date()
+      )
 
     return(list(
       shaped_input = shaped_input,

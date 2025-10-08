@@ -2,12 +2,12 @@
 library(shiny)
 
 # Source NG-CFFDRS vendored code
-source("ng/util.r", local = TRUE)
-source("ng/make_inputs.r", local = TRUE)
-source("ng/NG_FWI.r", local = TRUE)
+source("ng/util.r", local = FALSE)
+source("ng/make_inputs.r", local = FALSE)
+source("ng/NG_FWI.r", local = FALSE)
 
 # Source modules
-for (f in list.files("R/modules", pattern = "\\.R$", full.names = TRUE)) source(f, local = TRUE)
+for (f in list.files("R/modules", pattern = "\\.R$", full.names = TRUE)) source(f, local = FALSE)
 
 server <- function(input, output, session) {
   # i18n / language & UI texts
@@ -31,12 +31,21 @@ server <- function(input, output, session) {
   )
   fil <- mod_filter_server("filter", tr, raw_file = up$raw_file, mapping = map)
   init <- mod_init_server("init", tr)
-
-  # Engine (compute on Run)
+  
+  #Button Actions
   acts <- mod_actions_server("actions", tr, results = reactive(eng$run_model()), csv_name = up$csv_name)
+  
+  # Engine (compute on Run)
   eng <- mod_engine_server("engine",
-    raw_file = up$raw_file, mapping = map, tz = tz, filt = fil, init = init, tr = tr
+    raw_file = up$raw_file, mapping = map, tz = tz, filt = fil, init = init, tr = tr,
+    run_click=acts$run
   )
+  observeEvent(eng,{
+    print(head(eng$shaped_input()))
+  })
+  # print(str(eng$shaped_input))
+  
+  
 
   # Outputs
   mod_results_table_server("results_table", tr, dt_i18n, results = reactive(eng$run_model()))
