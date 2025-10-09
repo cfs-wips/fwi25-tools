@@ -17,6 +17,7 @@ mod_engine_server <- function(id, raw_file, mapping, tz, filt, init, tr, run_cli
     shaped_input <- reactive({
       validate(need(!is.null(raw_file()), "Upload a CSV first."))
       df <- tibble::as_tibble(raw_file())
+      # print(head(df))
       needed <- c(mapping$col_temp(), mapping$col_rh(), mapping$col_ws(), mapping$col_rain())
       validate(need(all(nzchar(needed)), "Please map temperature, RH, wind, and rain columns."))
       must_be_numeric <- needed
@@ -50,8 +51,10 @@ mod_engine_server <- function(id, raw_file, mapping, tz, filt, init, tr, run_cli
           validate(need(!all(is.na(dt_local)), "Could not parse your Date–Time column."))
         }
       } else {
-        y <- get_col(df, mapping$col_year()); m <- get_col(df, mapping$col_month())
-        d <- get_col(df, mapping$col_day()); h <- get_col(df, mapping$col_hour())
+        y <- get_col(df, mapping$col_year())
+        m <- get_col(df, mapping$col_month())
+        d <- get_col(df, mapping$col_day())
+        h <- get_col(df, mapping$col_hour())
         validate(need(all(!is.null(c(y,m,d,h))), "Provide Date–Time or Year/Month/Day/Hour."))
         dt_local <- lubridate::make_datetime(year = as.integer(y), month = as.integer(m), day = as.integer(d), hour = as.integer(h), tz = tz_use)
       }
@@ -90,7 +93,7 @@ mod_engine_server <- function(id, raw_file, mapping, tz, filt, init, tr, run_cli
         lat  = rep(suppressWarnings(as.numeric(mapping$manual_lat())), nrow(df)),
         long = rep(suppressWarnings(as.numeric(mapping$manual_lon())), nrow(df)),
         tz   = tz_use,
-        id   = df$id
+        id   = as.character(get_col(df,mapping$col_id()))
       )
       validate(need(all(!is.na(wx$temp)), "Temperature has NA after parsing."))
       validate(need(all(!is.na(wx$rh)),   "RH has NA after parsing."))

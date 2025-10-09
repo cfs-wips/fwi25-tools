@@ -44,7 +44,7 @@ ui <- fluidPage(
   tags$main(
     id = "main-content", role = "main", `aria-label` = "Hourly FWI application",
     sidebarLayout(
-      sidebarPanel(width = 3,
+      sidebarPanel(width = 4,
         # Upload
         mod_upload_ui("upload"),
         # Column mapping
@@ -58,7 +58,7 @@ ui <- fluidPage(
         mod_init_ui("init"),
         mod_actions_ui("actions")
       ),
-      mainPanel(width = 9,
+      mainPanel(width = 8,
         tags$div(id = "tabs-region", role = "region", `aria-label` = "Primary output tabs",
           tabsetPanel(id = "main_tabs",
             tabPanel(title = textOutput("tab_output_title"), value = "Output",
@@ -69,12 +69,13 @@ ui <- fluidPage(
             tabPanel(title = textOutput("tab_plot_title"), value = "Plot",
               mod_plot_ui("plot")
             ),
-            tabPanel(title = textOutput("tab_log_title"), value = "Log",
+            tabPanel(title = textOutput("tab_log_title"), value = "Log", tags$div(role = "region", `aria-label` = "Run log", 
               mod_log_ui("log")
             )
           )
         )
       )
+    )
     )
   ),
 

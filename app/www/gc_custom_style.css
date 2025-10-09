@@ -104,8 +104,70 @@ table.dataTable.gc-dt.stripe tbody tr:nth-child(even) { background-color: #fafaf
 .mapping-block { 
   min-height: 320px; /* tune as needed for your mapping controls */
 }
+/* Compact horizontal layout for the upload row */
+.upload-inline{
+  display:flex;
+  align-items:center;
+  gap: 0px;           /* space between file control and checkbox */
+  flex-wrap: wrap;     /* wrap on small screens */
+}
+
+/* Remove default bottom margins on Shiny inputs inside this row */
+.upload-inline .shiny-input-container{
+  margin-bottom: 0;
+}
+
+/* Checkbox cluster kept tight & aligned */
+.upload-checkbox{
+  display:inline-flex;
+  align-items:center;
+  gap: 6px;            /* space between label (with tooltip) and the box */
+}
 
 
+/* Bootstrap 3 checkbox container has extra margin—trim it */
+.upload-inline .checkbox{
+  margin: 0;
+}
+
+/* Align the actual checkbox better with text in some themes */
+.upload-inline input[type="checkbox"]{
+  margin-top: 0;
+}
+
+/* Optional: keep the file button tight in some themes */
+.upload-inline .btn{
+  margin-bottom: 0;
+}
+/* Help icon for tooltips */
+.help-icon { display:inline-flex; align-items:center; justify-content:center; width:1.15em; height:1.15em; margin-left:.35rem; font-weight:700; border:1px solid var(--gcds-border-default,#7D828B); border-radius:50%; color:var(--gcds-text-primary,#333); background:var(--gcds-bg-white,#fff); cursor:help; font-size:.8em; line-height:1; text-decoration:none; user-select:none; }
+.help-icon:focus { outline:2px solid var(--gcds-link-hover,#0535d2); outline-offset:2px; }
+
+
+/* Visually hidden (screen-reader only) */
+.sr-only { position:absolute!important; width:1px!important; height:1px!important; padding:0!important; margin:-1px!important; overflow:hidden!important; clip:rect(0,0,0,0)!important; white-space:nowrap!important; border:0!important; }
+
+
+/* Click-to-open rich help */
+.help-disclosure { display:inline-block; position:relative; margin-left:.35rem; }
+.help-disclosure>summary { list-style:none; display:inline-flex; align-items:center; justify-content:center; width:1.15em; height:1.15em; font-weight:700; font-size:.8em; line-height:1; border:1px solid var(--gcds-border-default,#7D828B); border-radius:50%; color:var(--gcds-text-primary,#333); background:var(--gcds-bg-white,#fff); cursor:pointer; user-select:none; }
+.help-disclosure>summary::-webkit-details-marker { display:none; }
+.help-disclosure>summary:focus { outline:2px solid var(--gcds-link-hover,#0535d2); outline-offset:2px; }
+.help-panel { position:absolute; z-index:1000; top:1.6em; left:0; min-width:240px; max-width:420px; padding:.5rem .75rem; border:1px solid var(--gcds-border-default,#7D828B); border-radius:.35rem; background:#fff; color:#333; box-shadow:0 6px 16px rgba(0,0,0,.12); }
+.help-panel p { margin:0 0 .5rem; }
+.help-panel ul { margin:.25rem 0 .25rem 1.15rem; }
+.help-panel table { width:100%; border-collapse:collapse; font-size:.875rem; }
+.help-panel th, .help-panel td { border:1px solid var(--gcds-border-default,#7D828B); padding:.25rem .4rem; vertical-align:top; }
+.help-panel th { background:var(--gcds-bg-light,#F1F2F3); text-align:left; }
+
+
+/* Small data preview under Column mapping */
+.mini-preview { margin:.25rem 0 .5rem; }
+.mini-preview__title { display:block; font-size:.85rem; color:var(--gcds-text-secondary,#43474E); margin-bottom:.25rem; }
+.mini-preview__wrap { overflow-x:auto; border:1px solid var(--gcds-border-default,#7D828B); border-radius:.25rem; }
+.mini-preview table { width:100%; border-collapse:collapse; font-size:.8rem; }
+.mini-preview th, .mini-preview td { border:1px solid var(--gcds-border-default,#7D828B); padding:.2rem .35rem; white-space:nowrap; text-overflow:ellipsis; overflow:hidden; }
+.mini-preview th { background:var(--gcds-bg-light,#F1F2F3); text-align:left; }
 
 .gc-card{
   padding:.5rem 1rem;
@@ -137,4 +199,11 @@ table.dataTable.gc-dt.stripe tbody tr:nth-child(even) { background-color: #fafaf
 /* If selectize is active, prevent stray clicks while disabled */
 .mapping-ui-fieldset[disabled] .selectize-control {
   pointer-events: none;
+}
+
+
+.progress{
+  margin-bottom: 0px;
+  height: auto;
+}
 }

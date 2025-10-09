@@ -39,6 +39,7 @@ i18n_labels <- list(
     free_y = "Free y–scale per facet",
     mapping_help = "Map your columns to what NG–CFFDRS expects. Provide either a single Date–Time column, or Year/Month/Day/Hour.",
     col_datetime = "Date–Time (optional)",
+    col_id = "Station ID (optional)",
     col_year  = "Year",
     col_month = "Month",
     col_day   = "Day",
@@ -52,9 +53,42 @@ i18n_labels <- list(
     modal_title = "Notice!",
     modal_close = "Dismiss",
     modal_body_html = paste0(
-      "<p>This small R Shiny application uses the NG FWI code from the public repository cffdrs-ng on GitHub to generate hourly FWI (IFM2025) results. Users can upload an hourly weather file and specify key inputs—such as starting codes and start date—to compute IFM2025 values.</p>",
-      "<p>The app is under active development. Code updates, input handling, and results formatting may change as IFM2025 evolves. Feedback is welcome; expect bugs and issues. This app is not for operational use—it's an exploratory tool.</p>",
+      "<p>This small R Shiny application uses the NG FWI code from the public repository cffdrs-ng on GitHub to generate hourly FWI (FWI2025) results. Users can upload an hourly weather file and specify key inputs—such as starting codes and start date—to compute IFM2025 values.</p>",
+      "<p>The app is under active development. Code updates, input handling, and results formatting may change as FWI2025 evolves. Feedback is welcome; expect bugs and issues. This app is not for operational use—it's an exploratory tool.</p>",
       "<p>This app uses Microsoft Copilot (GPT-5, Aug 2025) to assist with code and productivity.</p>"
+    ),
+    csv_spec_html = paste0(
+      "<p><strong>Expected CSV structure</strong></p>",
+      "<ul>",
+      "<li><em>Required columns</em>: Temperature (°C), RH (%), Wind (km/h), Rain (mm).</li>",
+      "<li><em>Date/Time</em>: either one <strong>Date‑Time</strong> column ",
+      "(local time or ISO‑8601 with <code>Z</code>/UTC offset), ",
+      "or four columns: <strong>Year</strong>, <strong>Month</strong>, <strong>Day</strong>, <strong>Hour</strong> (0–23).</li>",
+      "<li><em>Optional</em>: Latitude &amp; Longitude (degrees) used for time‑zone inference if TZ mode = Auto;</li>",
+      "<li>Column headers can be reselected via the <strong>Column mapping</strong> panel below; ",
+      "missing values allowed ('', NA, NaN, null).</li>",
+      "</ul>"
+    ),
+    csv_spec_sr = paste(
+      "Expected CSV: Required columns are Temperature in degrees Celsius,",
+      "Relative Humidity in percent, Wind in kilometers per hour, and Rain in millimeters.",
+      "Provide either a single Date-Time column, or Year/Month/Day/Hour (0 to 23).",
+      "Latitude and Longitude are optional but helpful for automatic time-zone inference."
+    ),
+    pop_time_zone_html = paste0(
+      "<p><strong>Time zone mode</strong></p>",
+      "<ul>",
+      "<li><em>Auto</em>: infer one IANA time zone from latitude/longitude (or use browser as fallback).</li>",
+      "<li><em>Fixed</em>: choose a single IANA time zone for all rows.</li>",
+      "</ul>",
+      "<p>The zone affects <em>local dates</em> and solar calculations (e.g., sunrise).</p>"
+    ),
+    pop_tz_offset_html = paste0(
+      "<p><strong>Offset policy for solar calcs</strong></p>",
+      "<ul>",
+      "<li><em>Standard</em>: ignore DST; use the standard offset year-round.</li>",
+      "<li><em>Modal</em>: use the most common offset present in your data (may include DST).</li>",
+      "</ul>"
     ),
     calc_fwi87 = "Calculate FWI87?",
     fwi25_results_title = "FWI25 Results (hourly)",
@@ -66,7 +100,7 @@ i18n_labels <- list(
     plot_var_over_time = "%s over time",
     dt_btn_copy = "Copy",
     dt_btn_csv  = "CSV",
-    dt_btn_excel= "Excel",
+    dt_btn_excel = "Excel",
     dt_sSearch = "Search:",
     dt_sLength = "Show _MENU_ entries",
     dt_sInfo   = "Showing _START_ to _END_ of _TOTAL_ entries",
@@ -96,7 +130,36 @@ i18n_labels <- list(
     err_dc_range   = "DC must be a non-negative number.",
     err_non_numeric_cols = "These columns are not numeric: %s",
     err_tz_invalid = "Selected time zone is not available on this system.",
-    iana_prefix = "IANA time zone:"
+    iana_prefix = "IANA time zone:",
+    tt_has_header = "First row contains column names.",
+    tt_col_datetime = "Single local Date‑Time or ISO‑8601 with 'Z' or UTC offset. If an explicit zone/offset is present it will be respected.",
+    tt_col_id       = "A station or unique ID for the weather station(s). Gets converted to text.",
+    tt_col_year     = "Year (e.g., 2025). Use if no single Date‑Time column.",
+    tt_col_month    = "Month (1–12). Use if no single Date‑Time column.",
+    tt_col_day      = "Day (1–31). Use if no single Date‑Time column.",
+    tt_col_hour     = "Hour of day in local time (0–23). Use if no single Date‑Time column.",
+    tt_col_temp     = "Air temperature in °C.",
+    tt_col_rh       = "Relative humidity in percent (0–100).",
+    tt_col_ws       = "Wind speed in km/h.",
+    tt_col_rain     = "Hourly precipitation in mm.",
+    tt_col_lat      = "Latitude in decimal degrees (negative for south).",
+    tt_col_lon      = "Longitude in decimal degrees (negative for west).",
+    tt_manual_lat   = "Used for solar calculations and to infer time zone when TZ mode is Auto.",
+    tt_manual_lon   = "Used for solar calculations and to infer time zone when TZ mode is Auto.",
+    tt_time_zone    = "Auto: infer one IANA time zone from lat/lon (or browser as fallback). Fixed: choose a single IANA time zone.",
+    tt_tz_offset_policy = "Standard: ignore DST for solar calculations. Modal: use the most common offset in your data (may include DST).",
+    tt_start_date   = "Drop rows before this local date (faster runs/plots).",
+    tt_init_ffmc    = "Initial Fine Fuel Moisture Code (0–101).",
+    tt_init_dmc     = "Initial Duff Moisture Code (≥ 0).",
+    tt_init_dc      = "Initial Drought Code (≥ 0).",
+    tt_calc_fwi87   = "Also compute daily FWI (1987) from hourly inputs (slower).",
+    tt_run          = "Run hFWI() with current settings.",
+    tt_download     = "Download the hFWI results as CSV.",
+    tt_mapping_header = "How to map your columns.",
+    tt_plot_dataset = "Choose to plot hFWI results or the input weather data.",
+    tt_plot_y_multi = "Select one or more numeric variables to facet.",
+    tt_facet_ncol   = "Number of small multiples per row.",
+    tt_facet_free_y = "Allow each facet to have an independent y-scale."
   ),
   fr = list(
     title = "IFF horaire (NG‑CFFDRS)",
@@ -134,6 +197,7 @@ i18n_labels <- list(
     free_y = "Axe des y libre par facette",
     mapping_help = "Faites correspondre vos colonnes à ce qu’exige NG‑CFFDRS. Fournissez soit une colonne Date‑heure unique, soit Année/Mois/Jour/Heure.",
     col_datetime = "Date‑heure (facultatif)",
+    col_id = "ID de station (facultatif)",
     col_year = "Année",
     col_month = "Mois",
     col_day = "Jour",
@@ -155,6 +219,39 @@ i18n_labels <- list(
       "Les commentaires sont les bienvenus et les utilisateurs doivent anticiper les bogues et les problèmes potentiels, car le code et l'application sont en cours de développement. ",
       "<strong>Cette application ne doit pas être utilisée à des fins opérationnelles et est conçue comme un outil exploratoire.</strong></p>",
       "<p><strong>Cette application utilise Microsoft Copilot, un assistant conversationnel alimenté par l’IA basé sur le modèle GPT‑5, conçu pour fournir des informations, générer du code et améliorer la productivité. Version : Copilot (GPT‑5, août 2025).</strong></p>"
+    ),
+    csv_spec_html = paste0(
+      "<p><strong>Structure CSV attendue</strong></p>",
+      "<ul>",
+      "<li><em>Colonnes obligatoires</em> : Température (°C), HR (%), Vent (km/h), Pluie (mm).</li>",
+      "<li><em>Date/Heure</em> : soit une seule colonne <strong>Date‑heure</strong> ",
+      "(heure locale ou ISO‑8601 avec <code>Z</code>/décalage UTC), ",
+      "soit quatre colonnes : <strong>Année</strong>, <strong>Mois</strong>, <strong>Jour</strong>, <strong>Heure</strong> (0–23).</li>",
+      "<li><em>Optionnel</em> : Latitude &amp; Longitude (degrés) utilisées pour déduire le fuseau si le mode FH = Auto;</li>",
+      "<li>Les en‑têtes peuvent être associés dans le panneau <strong>Correspondance des colonnes</strong> ci‑dessous ; ",
+      "valeurs manquantes permises ('', NA, NaN, null).</li>",
+      "</ul>"
+    ),
+    csv_spec_sr = paste(
+      "CSV attendu : Colonnes obligatoires : Température en degrés Celsius,",
+      "Humidité relative en pourcentage, Vent en kilomètres par heure, et Pluie en millimètres.",
+      "Fournir soit une colonne Date-heure unique, soit Année/Mois/Jour/Heure (0 à 23).",
+      "Latitude et Longitude sont optionnelles mais utiles pour le fuseau automatique."
+    ),
+    pop_time_zone_html = paste0(
+      "<p><strong>Mode de fuseau horaire</strong></p>",
+      "<ul>",
+      "<li><em>Auto</em> : déduire un fuseau IANA à partir de la latitude/longitude (ou navigateur).</li>",
+      "<li><em>Fixe</em> : choisir un seul fuseau IANA pour toutes les lignes.</li>",
+      "</ul>",
+      "<p>Le fuseau influe sur les <em>dates locales</em> et les calculs solaires (p. ex., lever du soleil).</p>"
+    ),
+    pop_tz_offset_html = paste0(
+      "<p><strong>Politique de décalage pour les calculs solaires</strong></p>",
+      "<ul>",
+      "<li><em>Standard</em> : ignorer l’heure d’été; utiliser le décalage standard toute l’année.</li>",
+      "<li><em>Modal</em> : utiliser le décalage le plus fréquent dans vos données (peut inclure l’heure d’été).</li>",
+      "</ul>"
     ),
     calc_fwi87 = "Calculer IFM87?",
     fwi25_results_title = "Résultats IFM25 (horaire)",
@@ -201,9 +298,43 @@ i18n_labels <- list(
     err_dc_range   = "Le DC doit être un nombre positif ou nul.",
     err_non_numeric_cols = "Ces colonnes ne sont pas numériques : %s",
     err_tz_invalid = "Le fuseau horaire sélectionné n’est pas disponible sur ce système.",
-    iana_prefix = "Fuseau IANA :"
+    iana_prefix = "Fuseau IANA :",
+    tt_has_header = "La première ligne contient les noms de colonnes.",
+    tt_col_datetime = "Une seule date‑heure locale ou ISO‑8601 avec « Z »/décalage UTC. Si une zone/décalage explicite est présent, il sera respecté.",
+    tt_col_id       = "[FR] A station or unique ID for the weather station(s). Gets converted to text.",
+    tt_col_year     = "Année (ex. 2025). À utiliser si aucune colonne Date‑heure unique.",
+    tt_col_month    = "Mois (1–12). À utiliser si aucune colonne Date‑heure unique.",
+    tt_col_day      = "Jour (1–31). À utiliser si aucune colonne Date‑heure unique.",
+    tt_col_hour     = "Heure locale (0–23). À utiliser si aucune colonne Date‑heure unique.",
+    tt_col_temp     = "Température de l’air en °C.",
+    tt_col_rh       = "Humidité relative en pourcentage (0–100).",
+    tt_col_ws       = "Vitesse du vent en km/h.",
+    tt_col_rain     = "Précipitations horaires en mm.",
+    tt_col_lat      = "Latitude en degrés décimaux (négatif pour sud).",
+    tt_col_lon      = "Longitude en degrés décimaux (négatif pour ouest).",
+    tt_manual_lat   = "Utilisée pour les calculs solaires et pour déduire le fuseau lorsque le mode FH est Auto.",
+    tt_manual_lon   = "Utilisée pour les calculs solaires et pour déduire le fuseau lorsque le mode FH est Auto.",
+    tt_time_zone    = "Auto : déduire un fuseau IANA à partir lat/lon (ou navigateur). Fixe : choisir un seul fuseau IANA.",
+    tt_tz_offset_policy = "Standard : ignorer l’heure d’été pour les calculs solaires. Modal : utiliser le décalage le plus fréquent dans vos données (peut inclure l’heure d’été).",
+    tt_start_date   = "Supprimer les lignes avant cette date locale (exécution/graphes plus rapides).",
+    tt_init_ffmc    = "FFMC initial (0–101).",
+    tt_init_dmc     = "DMC initial (≥ 0).",
+    tt_init_dc      = "DC initial (≥ 0).",
+    tt_calc_fwi87   = "Calculer aussi l’IFM quotidien (1987) à partir des données horaires (plus lent).",
+    tt_run          = "Exécuter hFWI() avec les paramètres actuels.",
+    tt_download     = "Télécharger les résultats hFWI en CSV.",
+    tt_plot_dataset = "Choisir d’afficher les résultats hFWI ou les données météo d’entrée.",
+    tt_plot_y_multi = "Sélectionner une ou plusieurs variables numériques à afficher par facettes.",
+    tt_facet_ncol   = "Nombre de facettes par ligne.",
+    tt_facet_free_y = "Autoriser une échelle des y indépendante par facette.",
+    tt_mapping_header = "Comment associer vos colonnes."
   )
 )
+
+get_i18n <- function(key, lang = "en"){
+  if (!lang %in% names(i18n_labels)) lang <- "en"
+  i18n_labels[[lang]][[key]]
+}
 
 tr_i18n <- function(key, lang = "en", ...) {
   if (!lang %in% names(i18n_labels)) lang <- "en"
@@ -220,10 +351,44 @@ tr_i18n <- function(key, lang = "en", ...) {
   val
 }
 
-get_i18n <- function(key, lang = "en"){
-  if (!lang %in% names(i18n_labels)) lang <- "en"
-  i18n_labels[[lang]][[key]]
+# Simple formatter for strings with {placeholders}
+trf <- function(val, ...) {
+  dots <- list(...)
+  if (is.character(val)) {
+    for (nm in names(dots)) {
+      val <- sub(paste0("{", nm, "}"), as.character(dots[[nm]]), val, fixed = TRUE)
+    }
+  }
+  val
 }
+
+help_icon <- function(text) {
+  tags$span(class = "help-icon", title = text, `aria-label` = text, tabindex = "0", "?")
+}
+help_disclosure <- function(popover_html, sr_label = NULL) {
+  lab <- if (!is.null(sr_label) && nzchar(sr_label)) sr_label else "More info"
+  tags$details(
+    class = "help-disclosure",
+    tags$summary("?", `aria-label` = lab),
+    tags$div(class = "help-panel", HTML(popover_html))
+  )
+}
+
+label_with_help_rich <- function(label_text, tip_text, popover_html, sr_label = NULL) {
+  tagList(
+    tags$span(label_text),
+    # tags$span(class = "help-icon", title = tip_text, `aria-label` = tip_text, tabindex = "0", "?"),
+    help_disclosure(popover_html, sr_label = sr_label)
+  )
+}
+
+label_with_help <- function(label_text, tip_text) {
+  tagList(label_text, HTML("&nbsp;"), help_icon(tip_text))
+}
+
+
+
+
 
 # --- Module: i18n (header + language state) ---
 mod_i18n_ui <- function(id){
@@ -312,7 +477,9 @@ mod_i18n_server <- function(id, session_title = TRUE){
         oPaginate = list(sFirst = tr("dt_pag_first"), sPrevious= tr("dt_pag_prev"), sNext = tr("dt_pag_next"), sLast = tr("dt_pag_last"))
       )
     })
-
+    observe({
+      showModal(modalDialog(title = tr("modal_title"), HTML(tr("modal_body_html")), easyClose = TRUE, footer = modalButton(tr("modal_close")), size = "l"))
+    })
     return(list(
       lang = lang,
       tr = tr,
