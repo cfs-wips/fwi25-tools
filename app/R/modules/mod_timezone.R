@@ -1,34 +1,43 @@
 # R/modules/mod_timezone.R
 
+# R/modules/mod_timezone.R  (UI only)
+
 mod_timezone_ui <- function(id) {
   ns <- NS(id)
   tagList(
-    tags$fieldset(
-     
-      tags$legend(id = ns("legend_tz_mode"), uiOutput(ns("lbl_time_zone"))),
+    # Two columns side-by-side (flex)
+    tags$div(
+      class = "tz-grid",
       
-      radioButtons(
-        ns("tz_mode"),
-        label   = NULL,
-        choices = c("fixed" = "fixed", "auto" = "auto"),
-        selected = "auto"
-      )
-    ),
-    
-    conditionalPanel(
-      sprintf("input['%s'] == 'fixed'", ns("tz_mode")),
-
-      selectInput(ns("fixed_tz"), label = NULL, choices = OlsonNames(), selected = "UTC")
-    ),
-    
-    tags$fieldset(
-      tags$legend(id = ns("legend_tz_offset"), uiOutput(ns("lbl_tz_offset_policy"))),
+      # --- Column 1: TZ mode + (conditional) Fixed TZ select ---
+      tags$div(
+        class = "tz-col",
+        tags$fieldset(
+          tags$legend(id = ns("legend_tz_mode"), uiOutput(ns("lbl_time_zone"))),
+          # Keep choices vertical (inline = FALSE or omit)
+          radioButtons(
+            ns("tz_mode"), label = NULL,
+            choices  = c("fixed" = "fixed", "auto" = "auto"),
+            selected = "auto"
+          )
+        ),
+        conditionalPanel(
+          sprintf("input['%s'] == 'fixed'", ns("tz_mode")),
+          selectInput(ns("fixed_tz"), label = NULL, choices = OlsonNames(), selected = "UTC")
+        )
+      ),
       
-      radioButtons(
-        ns("tz_offset_policy"),
-        label   = NULL,
-        choices = c("std" = "std", "modal" = "modal"),
-        selected = "std"
+      # --- Column 2: Offset policy ---
+      tags$div(
+        class = "tz-col",
+        tags$fieldset(
+          tags$legend(id = ns("legend_tz_offset"), uiOutput(ns("lbl_tz_offset_policy"))),
+          radioButtons(
+            ns("tz_offset_policy"), label = NULL,
+            choices  = c("std" = "std", "modal" = "modal"),
+            selected = "std"
+          )
+        )
       )
     ),
     
@@ -69,7 +78,8 @@ mod_timezone_server <- function(id, tr, manual_lat, manual_lon, browser_tz, look
           c("fixed", "auto"),
           c(tr("tz_fixed_one"), tr("tz_auto_infer"))
         ),
-        selected = input$tz_mode %||% "auto"
+        selected = input$tz_mode %||% "auto",
+        inline = F
       )
       
       updateSelectInput(session, "fixed_tz", label = tr("tz_select"))
@@ -81,7 +91,8 @@ mod_timezone_server <- function(id, tr, manual_lat, manual_lon, browser_tz, look
           c("std", "modal"),
           c(tr("tz_offset_std"), tr("tz_offset_modal"))
         ),
-        selected = input$tz_offset_policy %||% "std"
+        selected = input$tz_offset_policy %||% "std",
+        inline = F
       )
     })
     

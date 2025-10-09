@@ -73,6 +73,31 @@ header .gc-page-title { margin: .4rem 0 .3rem; }
   .gc-footer__legal { text-align: left; }
 }
 
+/* Side-by-side layout for the two radio groups */
+.tz-grid{
+  display:flex;
+  gap: 12px;
+  align-items:flex-start;
+  flex-wrap: wrap;     /* allows stacking on narrow sidebars */
+}
+
+.tz-grid .tz-col{
+  flex: 1 1 0;         /* two equal columns */
+  min-width: 220px;    /* prevents labels from squishing too much */
+}
+
+
+/* Trim default Shiny/Bootstrap spacing */
+.tz-grid .shiny-input-container{ margin-bottom: 8px; }
+
+/* Tweak radio spacing for neat vertical lists */
+.tz-grid .radio{ margin-top: 0; margin-bottom: 8px; }
+
+/* Keep it tidy on very narrow widths */
+@media (max-width: 480px){
+  .tz-grid .tz-col{ min-width: 100%; }
+}
+
 /* Panels */
 .sidebarPanel, .mainPanel { background-color: var(--gcds-bg-white); padding: 1rem; }
 .sidebarPanel { border-right: 1px solid var(--gcds-border-default); top: .5rem;}
