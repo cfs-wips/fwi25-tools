@@ -73,7 +73,8 @@ mod_upload_server <- function(id, tr){
             header = isTRUE(input$has_header),
             na.strings = c("","NA","NaN","null"),
             check.names = FALSE,
-            stringsAsFactors = FALSE
+            stringsAsFactors = FALSE,
+            blank.lines.skip = TRUE
           )
       )
     })

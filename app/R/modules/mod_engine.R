@@ -95,6 +95,10 @@ mod_engine_server <- function(id, raw_file, mapping, tz, filt, init, tr, run_cli
         tz   = tz_use,
         id   = as.character(get_col(df,mapping$col_id()))
       )
+      if(wx$datetime[1]>wx$datetime[2]){
+        print("Data is sorted most recent first, fixing")
+        wx <- wx[order(wx$datetime), ]
+      }
       validate(need(all(!is.na(wx$temp)), "Temperature has NA after parsing."))
       validate(need(all(!is.na(wx$rh)),   "RH has NA after parsing."))
       validate(need(all(!is.na(wx$ws)),   "Wind has NA after parsing."))

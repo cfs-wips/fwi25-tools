@@ -4,7 +4,7 @@ mod_results_table_ui <- function(id){
   tagList(
     tags$section(class = "gc-card",
       tags$div(role = 'region', `aria-label` = "FWI25 results table", uiOutput(ns("title"))),
-      shinycssloaders::withSpinner(DT::DTOutput(ns("tbl"), width = "100%", height = "40vh"))
+      shinycssloaders::withSpinner(DT::DTOutput(ns("tbl"), width = "100%"))
     )
   )
 }
@@ -21,8 +21,9 @@ mod_results_table_server <- function(id, tr, dt_i18n, results){
         extensions = c("Buttons","Scroller"),
         class = "display nowrap compact hover stripe gc-dt",
         options = list(
-          pageLength = 25, scrollX = TRUE, deferRender = TRUE,
-          scrollY = 500, scroller = TRUE, dom = "Bfrtip",
+          pageLength = 10, scrollX = TRUE, deferRender = TRUE,
+          scrollY=350,
+          scroller = TRUE, dom = "Bfrtip",
           buttons = list(
             list(extend = "copy", text = tr("dt_btn_copy")),
             list(extend = "csv",  text = tr("dt_btn_csv"), file = 'hFWI.csv'),

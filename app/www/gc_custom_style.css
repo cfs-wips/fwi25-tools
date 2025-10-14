@@ -121,7 +121,6 @@ header .gc-page-title { margin: .4rem 0 .3rem; }
 table.dataTable.gc-dt thead th { background-color: var(--gcds-bg-light, #F1F2F3); color: var(--gcds-text-primary, #333333); border-bottom: 2px solid var(--gcds-border-default, #7D828B); font-weight: 700; font-family: var(--gcds-font-families-heading, 'Lato', sans-serif); }
 table.dataTable.gc-dt tbody td { font-family: var(--gcds-font-families-body, 'Noto Sans', sans-serif); color: var(--gcds-text-primary, #333333); }
 table.dataTable.gc-dt.stripe tbody tr:nth-child(even) { background-color: #fafafa; }
-.dataTables_wrapper {height=40vh;}
 .dataTables_wrapper .dataTables_filter input, .dataTables_wrapper .dataTables_length select { border: 1px solid var(--gcds-border-default, #7D828B); border-radius: .25rem; padding: .25rem .5rem; font-family: var(--gcds-font-families-body, 'Noto Sans', sans-serif); }
 .dataTables_wrapper .dt-buttons .dt-button { background-color: var(--gcds-bg-primary, #26374A); color: var(--gcds-text-light, #fff); border: none; border-radius: .25rem; padding: .35rem .6rem; }
 .dataTables_wrapper .dt-buttons .dt-button:hover, .dataTables_wrapper .dt-buttons .dt-button:focus { background-color: var(--gcds-link-hover, #0535d2); }
@@ -129,6 +128,19 @@ table.dataTable.gc-dt.stripe tbody tr:nth-child(even) { background-color: #fafaf
 .mapping-block { 
   min-height: 320px; /* tune as needed for your mapping controls */
 }
+
+/* Only horizontal scroll when columns overflow */
+.gc-card .dataTables_scrollBody {
+  overflow-y: visible !important; /* no vertical scroll inside card */
+  overflow-x: auto !important;    /* allow horizontal scroll if needed */
+  width: 100% !important;
+}
+
+/* Optional: if you kept "nowrap", you can still wrap on narrow screens */
+@media (max-width: 768px) {
+  .gc-dt td, .gc-dt th { white-space: normal; }
+}
+
 /* Compact horizontal layout for the upload row */
 .upload-inline{
   display:flex;
@@ -141,12 +153,17 @@ table.dataTable.gc-dt.stripe tbody tr:nth-child(even) { background-color: #fafaf
 .upload-inline .shiny-input-container{
   margin-bottom: 0;
 }
+.upload-csv_input_ui{
+  flex: 2;
+}
+
 
 /* Checkbox cluster kept tight & aligned */
 .upload-checkbox{
   display:inline-flex;
   align-items:center;
-  gap: 6px;            /* space between label (with tooltip) and the box */
+  gap: 6px;   
+  /* space between label (with tooltip) and the box */
 }
 
 
