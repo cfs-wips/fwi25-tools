@@ -28,7 +28,7 @@ mod_init_ui <- function(id){
       class = "upload-checkbox",
       `aria-labelledby` = ns("lbl_calc_fwi87"),
       uiOutput(ns("lbl_calc_fwi87")),
-      checkboxInput(ns("calc_fwi87"), label = "", value = TRUE)
+      checkboxInput(ns("calc_fwi87"), label = "", value = F)
     )
   )
 }

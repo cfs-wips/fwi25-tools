@@ -38,18 +38,15 @@ server <- function(input, output, session) {
   # Engine (compute on Run)
   eng <- mod_engine_server("engine",
     raw_file = up$raw_file, mapping = map, tz = tz, filt = fil, init = init, tr = tr,
-    run_click=acts$run
+    run_click=acts$run,
+    debounce_ms = 400,   
+    cache = "app",       
+    enable_cache = TRUE  
   )
-  observeEvent(eng,{
-    print(head(eng$shaped_input()))
-  })
-  # print(str(eng$shaped_input))
-  
-  
 
   # Outputs
   mod_results_table_server("results_table", tr, dt_i18n, results = reactive(eng$run_model()))
   mod_fwi87_table_server("fwi87_table", tr, dt_i18n, df87 = reactive(eng$daily_fwi_df()))
   mod_plot_server("plot", tr, label_for_col, shaped_input = reactive(eng$shaped_input()), results = reactive(eng$run_model()), df87 = reactive(eng$daily_fwi_df()))
-  mod_log_server("log", shaped_input = reactive(eng$shaped_input()), raw_file = up$raw_file, df87 = reactive(eng$daily_fwi_df()), init = init)
+  mod_log_server("log", shaped_input = reactive(eng$shaped_input()), raw_file = up$raw_file, df87 = reactive(eng$daily_fwi_df()), init = init,metrics = eng$metrics)
 }
