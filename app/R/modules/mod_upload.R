@@ -60,23 +60,24 @@ mod_upload_server <- function(id, tr){
     raw_file <- reactive({
       req(input$csv)
       tryCatch(
-        data.table::fread(
+        dt<- data.table::fread(
           input$csv$datapath,
           sep = ",",
-          na.strings = c("","NA","NaN","null"),
+          na.strings = c("NA","NaN","null",""),
           header = isTRUE(input$has_header),
           blank.lines.skip = TRUE
         ),
         error = function(e)
-          utils::read.csv(
+          dt<-utils::read.csv(
             input$csv$datapath,
             header = isTRUE(input$has_header),
-            na.strings = c("","NA","NaN","null"),
+            na.strings = c("NA","NaN","null",""),
             check.names = FALSE,
             stringsAsFactors = FALSE,
             blank.lines.skip = TRUE
           )
       )
+      dt[rowSums(is.na(dt)) < ncol(dt)]
     })
     
     return(list(
