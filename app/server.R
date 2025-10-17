@@ -45,8 +45,28 @@ server <- function(input, output, session) {
   )
 
   # Outputs
-  mod_results_table_server("results_table", tr, dt_i18n, results = reactive(eng$run_model()))
-  mod_fwi87_table_server("fwi87_table", tr, dt_i18n, df87 = reactive(eng$daily_fwi_df()))
-  mod_plot_server("plot", tr, label_for_col, shaped_input = reactive(eng$shaped_input()), results = reactive(eng$run_model()), df87 = reactive(eng$daily_fwi_df()))
-  mod_log_server("log", shaped_input = reactive(eng$shaped_input()), raw_file = up$raw_file, df87 = reactive(eng$daily_fwi_df()), init = init,metrics = eng$metrics)
+  mod_results_table_server(
+    "results_table", tr, dt_i18n,
+    results = eng$run_model,
+    tz_reactive = tz$tz_use
+  )
+  mod_fwi87_table_server(
+    "fwi87_table", tr, dt_i18n, 
+    df87 = eng$daily_fwi_df,
+    tz_reactive = tz$tz_use
+  )
+  mod_plot_server(
+    "plot", tr, label_for_col,
+    shaped_input = eng$shaped_input_preview,
+    results = eng$run_model,
+    df87 = eng$daily_fwi_df
+  )
+  mod_log_server(
+    "log",
+    shaped_input = reactive(eng$shaped_input()),
+    raw_file = up$raw_file,
+    df87 = reactive(eng$daily_fwi_df()),
+    init = init,
+    metrics = eng$metrics
+  )
 }

@@ -291,7 +291,7 @@ table.dataTable.gc-dt.stripe tbody tr:nth-child(even) { background-color: #fafaf
 /* Horizontal scroll lives inside the card */
 .gc-card table.dataTable { width: 100% !important; }
 .gc-card .dataTables_wrapper .dataTables_scrollBody {
-  overflow-y: visible !important;  /* no vertical scroll inside card */
+  overflow-y: auto !important;  /* no vertical scroll inside card */
   overflow-x: auto !important;     /* allow horizontal scroll if needed */
   width: 100% !important;
 }
