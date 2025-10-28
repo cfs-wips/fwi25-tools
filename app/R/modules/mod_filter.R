@@ -130,7 +130,7 @@ mod_filter_ui <- function(id) {
   )
 }
 
-mod_filter_server <- function(id, tr, raw_file, mapping) {
+mod_filter_server <- function(id, tr,tz, raw_file, mapping) {
   moduleServer(id, function(input, output, session) {
     
     output$lbl_filter <- renderUI({
@@ -174,7 +174,7 @@ mod_filter_server <- function(id, tr, raw_file, mapping) {
         ycol   = if (nzchar(ycol))   ycol   else NULL,
         mcol   = if (nzchar(mcol))   mcol   else NULL,
         dcol   = if (nzchar(dcol))   dcol   else NULL,
-        tz = "UTC"
+        tz = tz$tz_use
       )
       
       # Update only if we successfully found a min date

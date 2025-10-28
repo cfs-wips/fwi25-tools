@@ -1,3 +1,8 @@
+
+if (interactive()) {
+  reactlog::reactlog_enable()
+}
+
 # server.R (modularized)
 library(shiny)
 
@@ -29,7 +34,7 @@ server <- function(input, output, session) {
     browser_tz = reactive(input$tz_browser),
     lookup_result = reactive(input$tz_lookup_result)
   )
-  fil <- mod_filter_server("filter", tr, raw_file = up$raw_file, mapping = map)
+  fil <- mod_filter_server("filter", tr, tz, raw_file = up$raw_file, mapping = map)
   init <- mod_init_server("init", tr)
   
   #Button Actions
@@ -45,6 +50,16 @@ server <- function(input, output, session) {
   )
 
   # Outputs
+  
+  mod_results_table_server(
+    id = "results_table",
+    tr = tr,
+    dt_i18n = dt_i18n,
+    results = eng$run_model,
+    tz_reactive = tz$tz_use,
+    ignore_dst_reactive = tz$tz_offset_policy
+  )
+  
   mod_results_table_server(
     "results_table", tr, dt_i18n,
     results = eng$run_model,
@@ -56,7 +71,7 @@ server <- function(input, output, session) {
     tz_reactive = tz$tz_use
   )
   mod_plot_server(
-    "plot", tr, label_for_col,
+    "plot", tr, i18n, label_for_col,
     shaped_input = eng$shaped_input_preview,
     results = eng$run_model,
     df87 = eng$daily_fwi_df

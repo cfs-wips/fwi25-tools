@@ -16,7 +16,7 @@ mod_engine_server <- function(
 ){
   moduleServer(id, function(input, output, session){
     
-    # Vendored NG code (your project structure)
+
     source("ng/util.r",        local = TRUE)
     source("ng/make_inputs.r", local = TRUE)
     source("ng/NG_FWI.r",      local = TRUE)
