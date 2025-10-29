@@ -1,8 +1,7 @@
-
 if (interactive()) {
   reactlog::reactlog_enable()
 }
-
+options(fwi.debug_times = TRUE)
 # server.R (modularized)
 library(shiny)
 
@@ -36,40 +35,35 @@ server <- function(input, output, session) {
   )
   fil <- mod_filter_server("filter", tr, tz, raw_file = up$raw_file, mapping = map)
   init <- mod_init_server("init", tr)
-  
-  #Button Actions
+
+  # Button Actions
   acts <- mod_actions_server("actions", tr, results = reactive(eng$run_model()), csv_name = up$csv_name)
-  
+
   # Engine (compute on Run)
   eng <- mod_engine_server("engine",
     raw_file = up$raw_file, mapping = map, tz = tz, filt = fil, init = init, tr = tr,
-    run_click=acts$run,
-    debounce_ms = 400,   
-    cache = "app",       
-    enable_cache = TRUE  
+    run_click = acts$run,
+    debounce_ms = 400,
+    cache = "app",
+    enable_cache = TRUE
   )
 
   # Outputs
-  
-  mod_results_table_server(
-    id = "results_table",
-    tr = tr,
-    dt_i18n = dt_i18n,
-    results = eng$run_model,
-    tz_reactive = tz$tz_use,
-    ignore_dst_reactive = tz$tz_offset_policy
-  )
-  
+
+
   mod_results_table_server(
     "results_table", tr, dt_i18n,
     results = eng$run_model,
-    tz_reactive = tz$tz_use
+    tz_reactive = tz$tz_use,
+    ignore_dst_reactive = tz$tz_offset_policy # <- wire the toggle here
   )
   mod_fwi87_table_server(
-    "fwi87_table", tr, dt_i18n, 
+    "fwi87_table", tr, dt_i18n,
     df87 = eng$daily_fwi_df,
-    tz_reactive = tz$tz_use
+    tz_reactive = tz$tz_use,
+    ignore_dst_reactive = tz$tz_offset_policy # <- and here
   )
+
   mod_plot_server(
     "plot", tr, i18n, label_for_col,
     shaped_input = eng$shaped_input_preview,
