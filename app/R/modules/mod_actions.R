@@ -1,5 +1,4 @@
 # R/modules/mod_actions.R
-
 mod_actions_ui <- function(id) {
   ns <- NS(id)
   # Run + Download + Help (compact row)
@@ -17,14 +16,13 @@ mod_actions_ui <- function(id) {
           class = "btn btn-link",
           title = "Help / Aide",
           `aria-label` = "Open help / Ouvrir l'aide",
-          icon = shiny::icon("circle-question") # Font Awesome 6 alias in recent Shiny
+          icon = shiny::icon("circle-question")
         )
       )
     )
   )
 }
 
-# small helper used above (same %||% semantics as elsewhere)
 `%||%` <- function(a, b) if (is.null(a) || length(a) == 0L) b else a
 
 #' @param tr translator function (from mod_i18n_server()$tr)
@@ -32,6 +30,7 @@ mod_actions_ui <- function(id) {
 #' @param csv_name reactive() used to build a friendly filename
 mod_actions_server <- function(id, tr, results, csv_name) {
   moduleServer(id, function(input, output, session) {
+    
     # --- Run button ---
     output$run_ui <- renderUI(
       actionButton(
@@ -41,19 +40,19 @@ mod_actions_server <- function(id, tr, results, csv_name) {
         `aria-label` = tr("aria_run_label")
       )
     )
-
+    
     # --- Download button ---
     output$dl_ui <- renderUI(
       downloadButton_sl(session$ns("dl"), tr("download_results"))
     )
-
+    
     safe_fwrite <- function(x, file) {
       tryCatch(
         data.table::fwrite(x, file),
         error = function(e) utils::write.csv(x, file, row.names = FALSE)
       )
     }
-
+    
     output$dl <- downloadHandler(
       filename = function() {
         sprintf(
@@ -67,8 +66,8 @@ mod_actions_server <- function(id, tr, results, csv_name) {
       },
       contentType = "text/csv"
     )
-
-    # --- Help icon opens the same i18n-backed modal used on first load ---
+    
+    # --- Help modal ---
     observeEvent(input$help, {
       showModal(
         modalDialog(
@@ -80,7 +79,7 @@ mod_actions_server <- function(id, tr, results, csv_name) {
         )
       )
     })
-
+    
     # Return the run click as before
     return(list(run = reactive(input$run)))
   })

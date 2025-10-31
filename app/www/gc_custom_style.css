@@ -286,3 +286,14 @@ table.dataTable.gc-dt.stripe tbody tr:nth-child(even) { background-color: #fafaf
 @media (max-width: 480px){
   .tz-grid .tz-col { min-width: 100%; }
 }
+
+/* Simple spinner used by the Run modal */
+.gc-spinner {
+  width: 18px; height: 18px;
+  border: 2px solid #ccc;
+  border-top-color: #2e6f40; /* forest-ish */
+  border-radius: 50%;
+  animation: gc-spin 0.8s linear infinite;
+}
+@keyframes gc-spin { to { transform: rotate(360deg); } }
+``

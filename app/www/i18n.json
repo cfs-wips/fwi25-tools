@@ -1,7 +1,7 @@
 {
   "en": {
     "title": "Hourly FWI (NG–CFFDRS)",
-
+    "running_hfwi_modal": "Running HFWI… This can take a moment on first run.",
     "upload_csv": "Upload weather CSV",
     "csv_has_header": "CSV has header",
     "csv_button_label": "Browse...",
@@ -47,7 +47,7 @@
     "tz_fixed_one": "Specify",
     "tz_auto_infer": "Infer from latitude/longitude",
     "tz_select": "Time zone",
-    "tz_offset_policy": "Daylight Savings Time Toggle",
+    "tz_offset_policy": "Daylight Savings Toggle",
     "tz_offset_std": "Ignore Daylight Savings Time",
     "tz_offset_modal": "Daylight Savings Time from data",
 
@@ -189,7 +189,7 @@
 
   "fr": {
     "title": "IFF horaire (NG‑CFFDRS)",
-
+    "fr": "Exécution de HFWI… Cela peut prendre un moment lors de la première exécution.",
     "upload_csv": "Téléverser le fichier CSV météo",
     "csv_has_header": "Le CSV comporte une ligne d’en‑tête",
     "csv_button_label": "Parcourir...",
