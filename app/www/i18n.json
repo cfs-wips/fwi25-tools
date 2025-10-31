@@ -67,7 +67,7 @@
     "tt_init_dmc": "Initial Duff Moisture Code (≥ 0).",
     "tt_init_dc": "Initial Drought Code (≥ 0).",
     "calc_fwi87": "Calculate FWI87?",
-    "tt_calc_fwi87": "Also compute daily FWI (1987) from hourly inputs (slower)."
+    "tt_calc_fwi87": "Also compute daily FWI (1987) from hourly inputs (slower).",
 
     "run_hfwi": "Run hFWI()",
     "tt_run": "Run hFWI() with current settings.",
@@ -95,6 +95,9 @@
     "plot_dataset_label": "Dataset to plot",
     "plot_dataset_results": "Results (hFWI output)",
     "plot_dataset_inputs": "Inputs (weather)",
+    
+    "plot_overlay_daily": "Overlay daily (FWI87)",
+    "tz_descriptor": "TZ: %s | Offset policy: %s",
 
     "plot_y_multi_label": "Variables (y-axis, facetted)",
     "plot_facets_ncol_label": "Facets per row",
@@ -180,7 +183,8 @@
     "csv_spec_sr": "Expected CSV: Required columns are Temperature in degrees Celsius, Relative Humidity in percent, Wind in kilometers per hour, and Rain in millimeters. Provide either a single Date-Time column, or Year/Month/Day/Hour (0 to 23). Latitude and Longitude are optional but helpful for automatic time-zone inference.",
 
     "pop_time_zone_html": "<p><strong>Time zone mode</strong></p><ul><li><em>Auto</em>: infer one IANA time zone from latitude/longitude (or use browser as fallback).</li><li><em>Fixed</em>: choose a single IANA time zone for all rows.</li></ul><p>The zone affects <em>local dates</em> and solar calculations (e.g., sunrise).</p>",
-    "pop_tz_offset_html": "<p><strong>Offset policy for solar calcs</strong></p><ul><li><em>Standard</em>: ignore DST; use the standard offset year‑round.</li><li><em>Modal</em>: use the most common offset present in your data (may include DST).</li></ul>"
+    "pop_tz_offset_html": "<p><strong>Offset policy for solar calcs</strong></p><ul><li><em>Standard</em>: ignore DST; use the standard offset year‑round.</li><li><em>Modal</em>: use the most common offset present in your data (may include DST).</li></ul>",
+    "err_non_numeric_cols": "The following columns must be numeric: {cols}"
   },
 
   "fr": {
@@ -252,7 +256,7 @@
     "tt_init_dmc": "DMC initial (≥ 0).",
     "tt_init_dc": "DC initial (≥ 0).",
     "calc_fwi87": "Calculer IFM87?",
-    "tt_calc_fwi87": "Calculer aussi l’IFM quotidien (1987) à partir des données horaires (plus lent)."
+    "tt_calc_fwi87": "Calculer aussi l’IFM quotidien (1987) à partir des données horaires (plus lent).",
     "run_hfwi": "Exécuter hFWI()",
     "tt_run": "Exécuter hFWI() avec les paramètres actuels.",
     "download_results": "Télécharger les résultats (CSV)",
@@ -275,6 +279,9 @@
     "plot_vars": "Sélectionnez les variables à tracer",
     "plot_sel_vars_over_time": "Variables sélectionnées au fil du temps",
     "plot_var_over_time": "%s au fil du temps",
+
+    "plot_overlay_daily": "Superposer la courbe quotidienne (IFM87)",
+    "tz_descriptor": "Fuseau: %s | Politique de décalage: %s",
 
     "plot_dataset_label": "Jeu de données à tracer",
     "plot_dataset_results": "Résultats (sortie hFWI)",
@@ -364,6 +371,7 @@
     "csv_spec_sr": "CSV attendu : Température en °C, Humidité relative en %, Vent en km/h, Pluie en mm. Fournir une colonne Date‑heure unique, ou Année/Mois/Jour/Heure (0 à 23). Latitude et Longitude optionnelles (fuseau automatique).",
 
     "pop_time_zone_html": "<p><strong>Mode de fuseau horaire</strong></p><ul><li><em>Auto</em> : déduire un fuseau IANA à partir de la latitude/longitude (ou navigateur).</li><li><em>Fixe</em> : choisir un seul fuseau IANA pour toutes les lignes.</li></ul><p>Le fuseau influe sur les <em>dates locales</em> et les calculs solaires (p. ex., lever du soleil).</p>",
-    "pop_tz_offset_html": "<p><strong>Politique de décalage pour les calculs solaires</strong></p><ul><li><em>Standard</em> : ignorer l’heure d’été; utiliser le décalage standard toute l’année.</li><li><em>Modal</em> : utiliser le décalage le plus fréquent dans vos données (peut inclure l’heure d’été).</li></ul>"
+    "pop_tz_offset_html": "<p><strong>Politique de décalage pour les calculs solaires</strong></p><ul><li><em>Standard</em> : ignorer l’heure d’été; utiliser le décalage standard toute l’année.</li><li><em>Modal</em> : utiliser le décalage le plus fréquent dans vos données (peut inclure l’heure d’été).</li></ul>",
+    "err_non_numeric_cols": "Les colonnes suivantes doivent être numériques : {cols}"
   }
 }

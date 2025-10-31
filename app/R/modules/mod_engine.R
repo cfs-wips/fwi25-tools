@@ -9,10 +9,11 @@
 # -----------------------------------------------------------------------------
 
 mod_engine_server <- function(
-    id, raw_file, mapping, tz, filt, init, tr, run_click,
-    debounce_ms = 400,
-    cache = "app",
-    enable_cache = TRUE) {
+  id, raw_file, mapping, tz, filt, init, tr, run_click,
+  debounce_ms = 400,
+  cache = "app",
+  enable_cache = TRUE
+) {
   moduleServer(id, function(input, output, session) {
     source("ng/util.r", local = TRUE)
     source("ng/make_inputs.r", local = TRUE)
@@ -179,7 +180,7 @@ mod_engine_server <- function(
       needed <- c(mapping$col_temp(), mapping$col_rh(), mapping$col_ws(), mapping$col_rain())
       validate(need(all(nzchar(needed)), "Please map temperature, RH, wind, and rain columns."))
       bad <- Filter(function(nm) !is.numeric(df[[nm]]), needed)
-      validate(need(length(bad) == 0, sprintf(tr("err_non_numeric_cols"), paste(bad, collapse = ", "))))
+      validate(need(length(bad) == 0, tr("err_non_numeric_cols", cols = paste(bad, collapse = ", "))))
 
       # initial conditions & location validations
       validate(
@@ -354,7 +355,7 @@ mod_engine_server <- function(
           lat = rep(lat_val, nrow(df)),
           long = rep(long_val, nrow(df)),
           tz = tz_use,
-          id = as.character(id_col)
+          id = if (!is.null(id_col)) as.character(id_col) else rep_len(NA_character_, nrow(df))
         )
       } else {
         wx <- tibble::tibble(
@@ -371,7 +372,7 @@ mod_engine_server <- function(
           lat = rep(lat_val, nrow(df)),
           long = rep(long_val, nrow(df)),
           tz = tz_use,
-          id = as.character(id_col)
+          id = if (!is.null(id_col)) as.character(id_col) else rep_len(NA_character_, nrow(df))
         )
       }
 
@@ -381,7 +382,26 @@ mod_engine_server <- function(
       validate(need(all(!is.na(wx$rh)), "RH has NA after parsing."))
       validate(need(all(!is.na(wx$ws)), "Wind has NA after parsing."))
       validate(need(all(!is.na(wx$rain)), "Rain has NA after parsing."))
-      # solrad optional
+
+      start_date_val <- filt$start_date()
+      if (!is.null(start_date_val)) {
+        # Coerce safely to Date; treat "" as NULL
+        if (identical(start_date_val, "") || (is.character(start_date_val) && !nzchar(start_date_val))) {
+          start_date_val <- NULL
+        } else if (inherits(start_date_val, "POSIXt")) {
+          start_date_val <- as.Date(start_date_val, tz = tz_use)
+        } else if (is.character(start_date_val)) {
+          start_date_val <- as.Date(start_date_val) # expects yyyy-mm-dd
+        }
+      }
+      # then use start_date_val
+      if (!is.null(start_date_val) && !is.na(start_date_val)) {
+        keep <- as.Date(dt_local, tz = tz_use) >= start_date_val
+        validate(need(any(keep), "All rows were filtered out by the start date."))
+        df <- df[keep, , drop = FALSE]
+        dt_local <- dt_local[keep]
+        validate(need(nrow(df) > 0, "No rows remain after filtering; check your date filter or input data."))
+      }
 
       list(
         inputs = wx,
