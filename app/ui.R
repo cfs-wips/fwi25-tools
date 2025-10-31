@@ -1,5 +1,4 @@
 # ui.R (modularized)
-# NOTE: Head tags and assets largely preserved from your original ui.R
 
 # Shinylive/Chromium download workaround wrappers (also provided in mod_utils)
 downloadButton_sl <- function(...) {
@@ -7,17 +6,24 @@ downloadButton_sl <- function(...) {
   tag$attribs$download <- NULL
   tag
 }
-downloadLink_sl   <- function(...) {
+downloadLink_sl <- function(...) {
   tag <- shiny::downloadLink(...)
   tag$attribs$download <- NULL
   tag
 }
-for (f in list.files("R/modules", pattern = "\\.R$", full.names = TRUE))
+
+for (f in list.files("R/modules", pattern = "\\.R$", full.names = TRUE)) {
   source(f, local = TRUE)
+}
+
 ui <- fluidPage(
   title = NULL,
+
+  # Enable shinyjs globally (needed for form reset on new CSV)
+  shinyjs::useShinyjs(),
   tags$head(
     tags$title("FWI2025"),
+
     # JS handlers: update browser tab title; sync & key aria labels
     tags$script(
       HTML(
@@ -33,42 +39,51 @@ ui <- fluidPage(
             if (msg && msg.tabs) document.getElementById('tabs-region')?.setAttribute('aria-label', msg.tabs);
           } catch(e){}
         });
-      "
+        "
       )
     ),
-    
     tags$script(HTML("
-  document.addEventListener('shiny:recalculating', function(ev){
-    var el = ev.target; if (!el) return;
-    var card = el.closest('.gc-card'); if (card) card.classList.add('busy');
-  });
-  document.addEventListener('shiny:value', function(ev){
-    var el = ev.target; if (!el) return;
-    var card = el.closest('.gc-card'); if (card) card.classList.remove('busy');
-  });
-")),
+      document.addEventListener('shiny:recalculating', function(ev){
+        var el = ev.target; if (!el) return;
+        var card = el.closest('.gc-card'); if (card) card.classList.add('busy');
+      });
+      document.addEventListener('shiny:value', function(ev){
+        var el = ev.target; if (!el) return;
+        var card = el.closest('.gc-card'); if (card) card.classList.remove('busy');
+      });
+    ")),
+
     # GCDS fonts & tokens
     tags$link(rel = "stylesheet", href = "https://cdn.jsdelivr.net/npm/@cdssnc/gcds-fonts@1.0.3/dist/gcds-fonts.css"),
     tags$link(rel = "stylesheet", href = "https://cdn.design-system.alpha.canada.ca/cdn/gcds/alpha/0.13.0/tokens.css"),
+
     # Custom CSS
     tags$link(rel = "stylesheet", type = "text/css", href = "gc_custom_style.css"),
     tags$style(
       HTML(
-        "\n .gc-card{overflow-x:auto;padding:.5rem 1rem;border:1px solid var(--gcds-border-default,#7D828B);border-radius:6px;background:#fff;margin-bottom:1rem;}\n .gc-card .dataTables_wrapper{overflow-x:auto;}\n "
+        "
+        .gc-card{overflow-x:auto;padding:.5rem 1rem;border:1px solid var(--gcds-border-default,#7D828B);border-radius:6px;background:#fff;margin-bottom:1rem;}
+        .gc-card .dataTables_wrapper{overflow-x:auto;}
+        "
       )
     ),
+
     # Timezone assets + init
     tags$script(src = "tz.js"),
     tags$script(
       HTML(
-        "\nif (document.readyState === 'complete'){ initializeTZ(); } else { window.addEventListener('load', initializeTZ); }\nfunction initializeTZ(){ try{ var browserTZ = Intl.DateTimeFormat().resolvedOptions().timeZone; if (browserTZ && typeof Shiny !== 'undefined'){ Shiny.setInputValue('tz_browser', browserTZ, {priority:'event'}); } } catch(e){ console.log(e); } }\nShiny.addCustomMessageHandler('tz_lookup', function(msg){ var tz = tzlookup(msg.lat, msg.lon); Shiny.setInputValue('tz_lookup_result', tz, {priority:'event'}); });\n"
+        "
+        if (document.readyState === 'complete'){ initializeTZ(); } else { window.addEventListener('load', initializeTZ); }
+        function initializeTZ(){ try{ var browserTZ = Intl.DateTimeFormat().resolvedOptions().timeZone; if (browserTZ && typeof Shiny !== 'undefined'){ Shiny.setInputValue('tz_browser', browserTZ, {priority:'event'}); } } catch(e){ console.log(e); } }
+        Shiny.addCustomMessageHandler('tz_lookup', function(msg){ var tz = tzlookup(msg.lat, msg.lon); Shiny.setInputValue('tz_lookup_result', tz, {priority:'event'}); });
+        "
       )
     )
   ),
-  
+
   # --- Header & language (module) ---
   mod_i18n_ui("i18n"),
-  
+
   # --- Main ---
   tags$main(
     id = "main-content",
@@ -77,18 +92,28 @@ ui <- fluidPage(
     sidebarLayout(
       sidebarPanel(
         width = 4,
-        # Upload
+
+        # Keep the fileInput OUTSIDE the resettable form
+        # so that resetting controls does not clear the uploaded file.
         mod_upload_ui("upload"),
-        # Column mapping
-        mod_mapping_ui("mapping"),
-        tags$hr(),
-        # Time zone
-        mod_timezone_ui("tz"),
-        # Filter
-        mod_filter_ui("filter"),
-        # Initial codes & actions
-        mod_init_ui("init"),
-        mod_actions_ui("actions")
+
+        # Wrap all remaining user controls in a form we can reset on new CSV
+        tags$form(
+          id = "controls",
+          # Column mapping
+          mod_mapping_ui("mapping"),
+          tags$hr(),
+
+          # Time zone
+          mod_timezone_ui("tz"),
+
+          # Filter
+          mod_filter_ui("filter"),
+
+          # Initial codes & actions
+          mod_init_ui("init"),
+          mod_actions_ui("actions")
+        )
       ),
       mainPanel(
         width = 8,
@@ -98,18 +123,47 @@ ui <- fluidPage(
           `aria-label` = "Primary output tabs",
           tabsetPanel(
             id = "main_tabs",
+
+            # ---------- Output tab ----------
             tabPanel(
               title = textOutput("tab_output_title"),
               value = "Output",
-              mod_results_table_ui("results_table"),
-              # FWI87 table (conditional shown in server if calc_fwi87)
-              conditionalPanel("true", mod_fwi87_table_ui("fwi87_table"))
+
+              # Show results only after Run HFWI post-upload
+              conditionalPanel(
+                condition = "output.can_show_results",
+                mod_results_table_ui("results_table"),
+                # FWI87 table (conditional shown in server if calc_fwi87)
+                conditionalPanel("true", mod_fwi87_table_ui("fwi87_table"))
+              ),
+              # Placeholder before Run
+              conditionalPanel(
+                condition = "!output.can_show_results",
+                tags$div(
+                  class = "gc-card",
+                  tags$p("Upload a CSV and click ", tags$strong("Run HFWI"), " to generate tables.")
+                )
+              )
             ),
+
+            # ---------- Plot tab ----------
             tabPanel(
               title = textOutput("tab_plot_title"),
               value = "Plot",
-              mod_plot_ui("plot")
+              conditionalPanel(
+                condition = "output.can_show_results",
+                mod_plot_ui("plot")
+              ),
+              conditionalPanel(
+                condition = "!output.can_show_results",
+                tags$div(
+                  class = "gc-card",
+                  tags$p("Upload a CSV and click ", tags$strong("Run HFWI"), " to display plots.")
+                )
+              )
             ),
+
+            # ---------- Log tab (always available) ----------
             tabPanel(
               title = textOutput("tab_log_title"),
               value = "Log",
@@ -120,7 +174,7 @@ ui <- fluidPage(
       )
     )
   ),
-  
+
   # Footer (unchanged)
   tags$footer(
     class = "gc-footer",
@@ -139,9 +193,7 @@ ui <- fluidPage(
       tags$div(
         class = "gc-footer__sig",
         tags$img(src = "nrcan_logo.svg", alt = "Ressources naturelles Canada / Natural Resources Canada", class = "gc-footer__sig-logo"),
-        tags$div(class = "gc-footer__legal", HTML(
-          "© Government of Canada / Gouvernement du Canada"
-        ))
+        tags$div(class = "gc-footer__legal", HTML("© Government of Canada / Gouvernement du Canada"))
       )
     )
   )

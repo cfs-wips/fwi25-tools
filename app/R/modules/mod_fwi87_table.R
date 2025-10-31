@@ -49,14 +49,23 @@ mod_fwi87_table_server <- function(id, tr, dt_i18n, df87, tz_reactive,
                                    ignore_dst_reactive = reactive(TRUE)) {
   moduleServer(id, function(input, output, session) {
     # ---- i18n
+
     i18n_or <- function(key, default) {
       val <- tryCatch(tr(key), error = function(e) NULL)
       if (is.null(val)) {
         return(default)
       }
       val_chr <- as.character(val)
-      if (length(val_chr) == 0 || !nzchar(val_chr)) default else val_chr
+      if (!length(val_chr) || !nzchar(val_chr)) {
+        return(default)
+      }
+      # treat '??key??' as missing and use the default
+      if (grepl("^\\?\\?.*\\?\\?$", val_chr)) {
+        return(default)
+      }
+      val_chr
     }
+
     output$title <- renderUI({
       h4(i18n_or("fwi87_results_title", "FWI87 daily results"))
     })

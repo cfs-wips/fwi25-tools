@@ -1,0 +1,118 @@
+<div class="fwi25-help">
+  <style>
+    .modal-lg .modal-dialog { max-width: 1200px; width: 95vw; }
+    .modal-lg .modal-body { max-height: 90vh; overflow-y: auto; }
+    .fwi25-help h2,.fwi25-help h3,.fwi25-help h4{color:#26374A;margin-top:1rem}
+    .fwi25-help p{margin:.5rem 0}
+    .fwi25-help ul{margin:.4rem 0 .6rem 1.2rem}
+    .fwi25-help .muted{color:#43474E}
+    .fwi25-help .note{background:#F1F2F3;padding:.5rem .75rem;border-radius:.35rem}
+    .fwi25-help figure{margin:.5rem 0 1rem}
+    .fwi25-help figcaption{font-size:.9rem;color:#43474E}
+    .fwi25-help .hero{display:flex;justify-content:space-between;gap:.75rem;align-items:center}
+    .fwi25-help .hero .links a{margin-left:.75rem}
+    .fwi25-help code,kbd{background:#f6f6f6;padding:.05rem .3rem;border-radius:.25rem}
+    @media (max-width:700px){.fwi25-help .hero{flex-direction:column;align-items:flex-start}}
+  </style>
+
+  <div class="hero">
+    <h2 style="margin:0">FWI25 • Canadian Forest Fire Weather Index (hourly)</h2>
+    <div class="links">
+      <a href="https://github.com/cfs-wips/fwi25-tools/issues" target="_blank" rel="noopener noreferrer">Issues ↗</a>
+    </div>
+  </div>
+
+  <p><strong>Purpose.</strong> Compute hourly FWI (FWI25) from your weather data to create operational tables and plots. Upload a CSV, configure options (mapping, timezone/DST, filters, initial codes), then run the model.</p>
+
+  <div class="note"><strong>Copilot & TBS policy.</strong> This app may use Microsoft Copilot to assist with translation and code generation. Use follows the Government of Canada’s
+    <a href="https://www.tbs-sct.canada.ca/pol/doc-eng.aspx?id=32592" target="_blank" rel="noopener noreferrer">Directive on Automated Decision‑Making</a>
+    and the
+    <a href="https://www.canada.ca/en/government/system/digital-government/digital-government-innovations/responsible-use-ai/guide-use-generative-ai.html" target="_blank" rel="noopener noreferrer">Guide on the use of generative AI</a>.
+    All AI‑assisted outputs are reviewed by humans before operational use.
+  </div>
+
+  <h3>What you need (CSV)</h3>
+  <ul>
+    <li><strong>Required columns:</strong> <code>temp</code> (°C), <code>rh</code> (%), <code>wind</code> (km/h), <code>precip</code> (mm).</li>
+    <li><strong>Date/Time:</strong> one <em>Date‑Time</em> column (local or ISO‑8601 with <code>Z</code>/offset) or <em>Year/Month/Day/Hour</em> (0–23).</li>
+    <li><strong>Optional:</strong> station ID, <em>lat/lon</em> (for TZ inference), <code>solrad</code> (passed through when present).</li>
+  </ul>
+
+  <h3>Workflow</h3>
+  <figure>
+    <svg width="100%" height="260" viewBox="0 0 600 260" role="img" aria-label="Vertical workflow (arrows up)">
+      <defs>
+        <style>
+          .bx{fill:#fff;stroke:#7D828B;stroke-width:1.2;rx:10;ry:10}
+          .t{font:600 14px Noto Sans,Arial,sans-serif;fill:#26374A}
+          .s{font:400 12px Noto Sans,Arial,sans-serif;fill:#43474E}
+        </style>
+      </defs>
+      <rect x="185" y="190" width="230" height="50" class="bx"/>
+      <text x="300" y="220" text-anchor="middle" class="t">Tables & Plots (FWI25 / FWI87)</text>
+      <polygon points="300,185 290,170 310,170" fill="#7D828B"/>
+      <rect x="215" y="120" width="170" height="50" class="bx"/>
+      <text x="300" y="150" text-anchor="middle" class="t">Run HFWI</text>
+      <polygon points="300,115 290,100 310,100" fill="#7D828B"/>
+      <rect x="120" y="50" width="360" height="50" class="bx"/>
+      <text x="300" y="72" text-anchor="middle" class="t">Map Columns • TZ/DST • Filters • Initial Codes</text>
+      <text x="300" y="90" text-anchor="middle" class="s">Upload resets inputs • Run required after each upload</text>
+      <polygon points="300,45 290,30 310,30" fill="#7D828B"/>
+      <rect x="230" y="0" width="140" height="40" class="bx"/>
+      <text x="300" y="25" text-anchor="middle" class="t">Upload CSV</text>
+    </svg>
+    <figcaption>Flow is vertical and moves <em>upwards</em>: upload → configure → <strong>Run</strong> → view/download.</figcaption>
+  </figure>
+
+  <h3>Time & DST policy</h3>
+  <p>Choose between <strong>civil time (DST‑aware)</strong> and <strong>fixed standard offset</strong>. This affects the timestamps shown in tables, x‑axis labels, and solar calculations.</p>
+
+  <figure>
+    <svg width="100%" height="220" viewBox="0 0 900 220" role="img" aria-label="DST policy options">
+      <style>.bx{fill:#fff;stroke:#7D828B;stroke-width:1;rx:10;ry:10}.t{font:600 14px Noto Sans,Arial,sans-serif;fill:#26374A}.s{font:400 12px Noto Sans,Arial,sans-serif;fill:#43474E}</style>
+      <rect x="30" y="30" width="390" height="150" class="bx"/>
+      <text x="225" y="55" text-anchor="middle" class="t">Use DST from data (civil)</text>
+      <text x="225" y="85" text-anchor="middle" class="s">Display zone = per‑row Olson tz</text>
+      <text x="225" y="105" text-anchor="middle" class="s">X‑axis & table reflect DST jumps</text>
+      <rect x="480" y="30" width="390" height="150" class="bx"/>
+      <text x="675" y="55" text-anchor="middle" class="t">Ignore DST (standard offset)</text>
+      <text x="675" y="85" text-anchor="middle" class="s">Display zone = fixed Etc/GMT±N</text>
+      <text x="675" y="105" text-anchor="middle" class="s">Uniform hourly spacing year‑round</text>
+    </svg>
+    <figcaption>Pick the policy that matches your operational convention and data collection.</figcaption>
+  </figure>
+
+  <h3>Features</h3>
+  <ul>
+    <li><strong>Column mapping:</strong> Required schema; optional <code>lat/lon</code> for TZ inference and <code>solrad</code>.</li>
+    <li><strong>Timezone:</strong> Auto (infer) or Fixed (select one IANA zone).</li>
+    <li><strong>Filters:</strong> Drop rows prior to a local date to speed up runs/plots.</li>
+    <li><strong>Initial codes:</strong> Set FFMC/DMC/DC starting values.</li>
+    <li><strong>Engine:</strong> Runs hFWI; optional daily FWI87 overlay/summary.</li>
+    <li><strong>Outputs:</strong> FWI25 (hourly), FWI87 (daily), plots (DST‑aware), CSV download.</li>
+    <li><strong>Reset on upload:</strong> New CSV resets inputs & hides prior results until you press <strong>Run HFWI</strong>.</li>
+  </ul>
+
+  <h3>Common pitfalls</h3>
+  <ul>
+    <li>Units mismatch (°F, mph, inches) — verify: °C, %, km/h, mm.</li>
+    <li>Duplicate timestamps or gaps — fix in source CSV.</li>
+    <li>Mixed/ambiguous time zones — prefer ISO‑8601 with explicit offset.</li>
+    <li>Large files — pre‑filter by date range.</li>
+  </ul>
+
+  <h3>Known limitations</h3>
+  <ul>
+    <li>Assumes hourly weather; sub‑hourly data are aggregated/ignored upstream.</li>
+    <li>Solar terms depend on TZ/DST policy and lat/lon quality.</li>
+    <li>Plots are summaries; verify outputs before external distribution.</li>
+  </ul>
+
+  <h3>Privacy & security</h3>
+  <p>Uploaded files stay within the session. Avoid personal or sensitive data. See departmental guidance for records management and retention.</p>
+
+  <h3>Support</h3>
+  <p>Questions or bugs? Open an issue:
+    <a href="https://github.com/cfs-wips/fwi25-tools/issues" target="_blank" rel="noopener noreferrer">cfs‑wips/fwi25‑tools · Issues</a>.
+  </p>
+</div>
