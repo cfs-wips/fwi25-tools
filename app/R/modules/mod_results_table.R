@@ -344,6 +344,7 @@ mod_results_table_server <- function(id, tr, dt_i18n, results, tz_reactive,
         DT::datatable(
           df,
           rownames = FALSE,
+          fillContainer = TRUE,
           escape = TRUE,
           filter = "top",
           class = "display nowrap compact hover stripe gc-dt",
@@ -369,8 +370,7 @@ mod_results_table_server <- function(id, tr, dt_i18n, results, tz_reactive,
           callback = cb
         )
       },
-      server = TRUE,
-      fillContainer = TRUE
+      server = TRUE
     )
     outputOptions(output, "tbl", suspendWhenHidden = FALSE)
   })

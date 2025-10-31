@@ -263,6 +263,7 @@ mod_fwi87_table_server <- function(id, tr, dt_i18n, df87, tz_reactive,
           d,
           rownames = FALSE,
           escape = TRUE,
+          fillContainer = TRUE,
           filter = "top",
           class = "display nowrap compact hover stripe gc-dt",
           extensions = c("Buttons", "Scroller"),
@@ -284,8 +285,8 @@ mod_fwi87_table_server <- function(id, tr, dt_i18n, df87, tz_reactive,
           )
         )
       },
-      server = TRUE,
-      fillContainer = TRUE
+      server = TRUE
+      
     )
     outputOptions(output, "tbl", suspendWhenHidden = FALSE)
   })
