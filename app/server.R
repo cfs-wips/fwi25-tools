@@ -128,14 +128,17 @@ server <- function(input, output, session) {
     ignore_dst_reactive = tz$tz_offset_policy
   )
   
+  
   mod_plot_server(
     "plot", tr, i18n, label_for_col,
     shaped_input        = eng$shaped_input_preview,
     results             = eng$run_model,
-    df87                = eng$daily_fwi_df,         # overlay only
-    tz_reactive         = tz$tz_use,                # Olson TZ
-    ignore_dst_reactive = tz$tz_offset_policy
+    df87                = eng$daily_fwi_df,
+    tz_reactive         = tz$tz_use,
+    ignore_dst_reactive = tz$tz_offset_policy,
+    tab_active          = reactive(input$main_tabs)   # <--- NEW
   )
+  
   
   mod_log_server(
     "log",

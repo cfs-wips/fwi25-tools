@@ -1,4 +1,5 @@
 # R/modules/mod_plot.R
+
 mod_plot_ui <- function(id) {
   ns <- NS(id)
   tagList(
@@ -52,6 +53,8 @@ mod_plot_ui <- function(id) {
   )
 }
 
+#' Plot module server
+#'
 #' @param tr translator function
 #' @param i18n i18n object (for language reactive)
 #' @param label_for_col function mapping column names to localized labels
@@ -60,10 +63,12 @@ mod_plot_ui <- function(id) {
 #' @param df87 reactive: daily FWI87 results (overlay only; never selectable)
 #' @param tz_reactive reactive( character(1) Olson TZ ), e.g., tz$tz_use
 #' @param ignore_dst_reactive reactive policy (TRUE => standard offset | FALSE => civil/DST)
+#' @param tab_active optional reactive() returning active tab value (e.g., input$main_tabs)
 mod_plot_server <- function(
     id, tr, i18n, label_for_col,
     shaped_input, results, df87,
-    tz_reactive, ignore_dst_reactive = reactive(TRUE)
+    tz_reactive, ignore_dst_reactive = reactive(TRUE),
+    tab_active = reactive(NULL)
 ) {
   moduleServer(id, function(input, output, session) {
     
@@ -311,7 +316,7 @@ mod_plot_server <- function(
       }
     }, once = TRUE, priority = 95)
     
-    # Localize facet control labels
+    # ---- Localize facet control labels
     observe({
       updateSelectInput(session, "plot_dataset",
                         label = i18n_or("data_source", "Data source"),
@@ -321,16 +326,54 @@ mod_plot_server <- function(
       updateCheckboxInput(session, "facet_free_y", label = i18n_or("plot_free_y_label", "Free y–scale per facet"))
     })
     
-    # ---- Render Plotly (native)
+    # ---- ONE-TIME auto-init when Plot tab is first opened and results exist
+    plotted_once <- reactiveVal(FALSE)
+    
+    observeEvent(list(tab_active(), results()), {
+      req(tab_active() == "Plot")
+      req(!plotted_once())
+      
+      d <- results()
+      req(!is.null(d), nrow(as.data.frame(d)) > 0)
+      
+      # Ensure dataset is 'results'
+      if (is.null(input$plot_dataset) || !identical(input$plot_dataset, "results")) {
+        updateSelectInput(session, "plot_dataset", selected = "results")
+      }
+      
+      # Seed sensible defaults if none yet selected
+      if (is.null(input$plot_y_multi) || length(input$plot_y_multi) == 0) {
+        cols <- names(as.data.frame(d))
+        # Try preferred FWI indices first (case-insensitive), fall back to first few numerics
+        pref_ci <- c("ffmc","dmc","dc","fwi","isi","bui")
+        # find case-insensitive matches preserving case in 'cols'
+        pick <- cols[tolower(cols) %in% pref_ci]
+        if (length(pick) == 0) {
+          num_cols <- cols[vapply(as.data.frame(d)[cols], is.numeric, logical(1))]
+          pick <- head(setdiff(num_cols, c("datetime","timestamp","id","tz","timezone")), 4)
+        }
+        if (length(pick) > 0) {
+          updateSelectizeInput(session, "plot_y_multi", selected = unique(pick))
+        }
+      }
+      
+      bump_reseed()
+      plotted_once(TRUE)
+    }, ignoreInit = FALSE, priority = 200)
+    
+    # ================= Render Plotly (native) =================
+    # Helper: add facet titles as annotations above each subplot panel
     add_facet_titles <- function(sp, facet_titles) {
       lay <- sp$x$layout
+      # Collect axis domain names in order: xaxis, xaxis2, ... / yaxis, yaxis2, ...
       xnames <- grep("^xaxis\\d*$", names(lay), value = TRUE)
-      ynames <- gsub("^x", "y", xnames)
+      ynames <- gsub("^x", "y", xnames) # xaxisN -> yaxisN (subplot keeps ordering)
       ann <- list()
       for (i in seq_along(facet_titles)) {
         xn <- xnames[i]; yn <- ynames[i]
         if (is.null(lay[[xn]]$domain) || is.null(lay[[yn]]$domain)) next
         xd <- lay[[xn]]$domain; yd <- lay[[yn]]$domain
+        # Place annotation centered in x (paper coords) slightly above panel (paper y)
         ann[[length(ann) + 1L]] <- list(
           text = facet_titles[i],
           x = mean(xd), xref = "paper",
@@ -340,6 +383,7 @@ mod_plot_server <- function(
           font = list(size = 12, family = "sans")
         )
       }
+      # Increase top margin to make space for headers
       sp <- plotly::layout(sp, annotations = c(lay$annotations %||% list(), ann), margin = list(t = 80))
       sp
     }
@@ -357,11 +401,12 @@ mod_plot_server <- function(
       validate(need(length(common) > 0,
                     i18n_or("err_no_selected_vars_in_dataset", "Selected variables not present in this dataset.")))
       
+      # Long format
       long_df <- df_small |>
         tidyr::pivot_longer(cols = tidyselect::all_of(common), names_to = "variable", values_to = "value") |>
         dplyr::filter(!is.na(.data$value))
       
-      # Variable labels
+      # Variable labels (facet headers, localized via your helper)
       var_label_levels <- vapply(common, function(v) label_for_col(v, type = "short"), character(1))
       long_df$var_label <- vapply(
         as.character(long_df$variable),
@@ -374,6 +419,7 @@ mod_plot_server <- function(
       lab_fwi25 <- i18n_or("legend_fwi25", "FWI25 (hourly)")
       lab_fwi87 <- i18n_or("legend_fwi87", "FWI87 (daily)")
       long_df$source <- lab_fwi25
+      
       # Optional overlay (dataset == "results")
       overlay_df <- NULL
       if (identical(input$plot_dataset, "results")) {
@@ -442,11 +488,6 @@ mod_plot_server <- function(
       names(pal_fwi25) <- paste(lab_fwi25, id_vals, sep = "__")
       names(pal_fwi87) <- paste(lab_fwi87, id_vals, sep = "__")
       colour_map <- c(pal_fwi25, pal_fwi87)
-      
-      # Legend label map
-      breaks_in_data <- unique(c(long_df$series_id, if (!is.null(overlay_df)) overlay_df$series_id))
-      label_series <- function(x) { parts <- strsplit(x, "__", fixed = TRUE)[[1]]; sprintf("%s — %s", parts[2], parts[1]) }
-      label_map <- stats::setNames(vapply(breaks_in_data, label_series, character(1)), breaks_in_data)
       
       # Compute x_plot honouring DST policy
       tz_use <- tz_reactive() %||% "UTC"
