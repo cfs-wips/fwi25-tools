@@ -1,11 +1,9 @@
 # R/modules/mod_mapping.R
-
 mod_mapping_ui <- function(id) {
   ns <- NS(id)
   tagList(
     # CHANGED: textOutput -> uiOutput to render label + tooltip + help panel
     h4(id = ns("lbl_column_mapping"), uiOutput(ns("lbl_column_mapping"))),
-    
     tags$div(
       role = "group", `aria-labelledby` = ns("lbl_column_mapping"),
       tags$div(class = "mapping-block", uiOutput(ns("mapping_ui")))
@@ -20,19 +18,30 @@ mod_mapping_server <- function(id, tr, cols, df) {
     output$lbl_column_mapping <- renderUI({
       # Uses existing i18n keys: column_mapping, tt_mapping_header, mapping_help
       label_with_help_rich(
-        label_text   = tr("column_mapping"),
-        tip_text     = tr("tt_mapping_header"),
+        label_text  = tr("column_mapping"),
+        tip_text    = tr("tt_mapping_header"),
         popover_html = tr("mapping_help"),
-        sr_label     = tr("column_mapping")
+        sr_label    = tr("column_mapping")
       )
     })
     
     # --- Helper: safe, practical column guesser (fixed regex) ---
+    
+    
     find_col <- function(cols, keywords) {
-      rx <- paste0("^(", paste(keywords, collapse = "|"), ")$", collapse = "")
+      escape_rx <- function(x) gsub("([\\.^$|()*+?{}\\[\\]\\\\])", "\\\\\\1", x, perl = TRUE)
+      rx <- paste0("^(", paste(escape_rx(keywords), collapse = "|"), ")$")
       m  <- cols[grepl(rx, cols, ignore.case = TRUE)]
-      if (length(m) > 0) m[1] else ""
+      if (length(m) > 0) return(m[1])
+      
+      # Fallback: normalized comparison (letters+digits only)
+      norm <- function(x) gsub("[^a-z0-9]+", "", tolower(trimws(x)))
+      nc <- norm(cols); nk <- norm(keywords)
+      idx <- which(nc %in% nk)
+      if (length(idx) > 0) cols[idx[1]] else ""
     }
+    
+    
     
     # --- Helper: only show a tooltip if the i18n entry exists ---
     tt_or_null <- function(key) {
@@ -49,10 +58,10 @@ mod_mapping_server <- function(id, tr, cols, df) {
     }
     
     output$mapping_ui <- renderUI({
-      has_file   <- length(cols()) > 0
-      cc         <- cols()
-      pick_sel   <- function(val) if (has_file) val else ""
-      fc         <- function(x, include_blank = TRUE) if (include_blank) c("", x) else x
+      has_file     <- length(cols()) > 0
+      cc           <- cols()
+      pick_sel     <- function(val) if (has_file) val else ""
+      fc           <- function(x, include_blank = TRUE) if (include_blank) c("", x) else x
       disabled_attr <- if (!has_file) NA else NULL
       aria_state    <- if (!has_file) "true" else "false"
       
@@ -61,8 +70,7 @@ mod_mapping_server <- function(id, tr, cols, df) {
           class = "mapping-ui-fieldset",
           disabled = disabled_attr, `aria-disabled` = aria_state,
           
-          # The rich help for the section lives in the heading; no extra helpText here.
-          
+          # Row 1: datetime + id
           fluidRow(
             column(
               6,
@@ -85,6 +93,29 @@ mod_mapping_server <- function(id, tr, cols, df) {
             )
           ),
           
+          # Row 1b: Date + Time (optional, alternative path)
+          fluidRow(
+            column(
+              6,
+              selectInput(
+                session$ns("col_date"),
+                lbl("col_date", "tt_col_date"),
+                choices  = fc(cc),
+                selected = pick_sel(find_col(cc, c("date", "day_date", "dt", "obs_date")))
+              )
+            ),
+            column(
+              6,
+              selectInput(
+                session$ns("col_time"),
+                lbl("col_time", "tt_col_time"),
+                choices  = fc(cc),
+                selected = pick_sel(find_col(cc, c("time", "hour_min", "obs_time", "hhmm", "hh:mm")))
+              )
+            )
+          ),
+          
+          # Row 2: Y/M/D/H (existing)
           fluidRow(
             column(
               3,
@@ -124,6 +155,7 @@ mod_mapping_server <- function(id, tr, cols, df) {
             )
           ),
           
+          # Row 3: met inputs (existing)
           fluidRow(
             column(
               3,
@@ -163,6 +195,23 @@ mod_mapping_server <- function(id, tr, cols, df) {
             )
           ),
           
+          # Row 3b: Solar radiation (optional)
+          fluidRow(
+            column(
+              6,
+              selectInput(
+                session$ns("col_solrad"),
+                lbl("col_solrad", "tt_col_solrad"),
+                choices  = fc(cc),
+                selected = pick_sel(find_col(cc, c(
+                  "solar", "solrad", "solar_radiation", "shortwave", "srad",
+                  "rsds", "swdown", "rad", "radiation", "rad_wm2"
+                )))
+              )
+            )
+          ),
+          
+          # Row 4: manual lat/lon (existing)
           fluidRow(
             column(
               6,
@@ -188,16 +237,14 @@ mod_mapping_server <- function(id, tr, cols, df) {
     # Prefill manual lat/lon from first row if present
     observeEvent(cols(), ignoreInit = TRUE, {
       has_file <- length(cols()) > 0
-      df      <- df()
-      cc      <- names(df)
+      df  <- df()
+      cc  <- names(df)
       lat_col <- find_col(cc, c("lat", "latitude"))
       lon_col <- find_col(cc, c("lon", "long", "longitude"))
-      
       lat_default <- suppressWarnings(as.numeric(if (nzchar(lat_col)) df[[lat_col]][1] else NA))
       lon_default <- suppressWarnings(as.numeric(if (nzchar(lon_col)) df[[lon_col]][1] else NA))
       if (!is.finite(lat_default)) lat_default <- 55
       if (!is.finite(lon_default)) lon_default <- -120
-      
       updateNumericInput(session, "manual_lat", value = lat_default)
       updateNumericInput(session, "manual_lon", value = lon_default)
     })
@@ -205,14 +252,22 @@ mod_mapping_server <- function(id, tr, cols, df) {
     return(list(
       col_datetime = reactive(input$col_datetime),
       col_id       = reactive(input$col_id),
+      
+      # NEW: optional Date + Time + Solar selections
+      col_date     = reactive(input$col_date),
+      col_time     = reactive(input$col_time),
+      col_solrad   = reactive(input$col_solrad),
+      
       col_year     = reactive(input$col_year),
       col_month    = reactive(input$col_month),
       col_day      = reactive(input$col_day),
       col_hour     = reactive(input$col_hour),
+      
       col_temp     = reactive(input$col_temp),
       col_rh       = reactive(input$col_rh),
       col_ws       = reactive(input$col_ws),
       col_rain     = reactive(input$col_rain),
+      
       manual_lat   = reactive(input$manual_lat),
       manual_lon   = reactive(input$manual_lon)
     ))

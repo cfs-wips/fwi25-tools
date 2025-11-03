@@ -1,11 +1,9 @@
 /* =======================================================================
-   GC Design System – Custom styles for Hourly FWI (NG‑CFFDRS)
-   Uses GCDS tokens where available with safe fallbacks.
-   ======================================================================= */
+ GC Design System – Custom styles for Hourly FWI (NG‑CFFDRS)
+ Uses GCDS tokens where available with safe fallbacks.
+ ======================================================================= */
 
-/* -----------------------------------------------------------------------
-   1) Design tokens & base
-   ----------------------------------------------------------------------- */
+/* 1) Design tokens & base */
 :root {
   --gcds-bg-light: #F1F2F3;
   --gcds-bg-primary: #26374A;
@@ -20,9 +18,7 @@
   --gcds-font-families-body: 'Noto Sans', sans-serif;
   --gcds-font-families-heading: 'Lato', sans-serif;
 }
-
 html { font-size: 100%; }
-
 body {
   font-family: var(--gcds-font-families-body, 'Noto Sans', sans-serif);
   background-color: var(--gcds-bg-light);
@@ -31,14 +27,12 @@ body {
   padding: 0;
   line-height: 1.6;
 }
-
 a {
   color: var(--gcds-link-default);
   text-decoration-thickness: 1.5px;
   text-underline-offset: 2px;
 }
 a:hover, a:focus { color: var(--gcds-link-hover); }
-
 /* Accessible skip link */
 .skip-link {
   position: absolute; left: -9999px; top: auto; width: 1px; height: 1px; overflow: hidden;
@@ -48,7 +42,6 @@ a:hover, a:focus { color: var(--gcds-link-hover); }
   position: static; width: auto; height: auto; padding: .5rem .75rem;
   background: #fff; border: 2px solid var(--gcds-link-hover); z-index: 10000;
 }
-
 /* Global focus styles */
 .form-control:focus-visible,
 select:focus-visible,
@@ -59,15 +52,12 @@ a:focus-visible {
   outline: 3px solid var(--gcds-link-hover);
   outline-offset: 2px;
 }
-
 /* Respect reduced motion preferences */
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
 
-/* -----------------------------------------------------------------------
-   2) Page chrome (titles, header, footer)
-   ----------------------------------------------------------------------- */
+/* 2) Page chrome (titles, header, footer) */
 h1.gc-page-title {
   position: relative; margin: .5rem 1rem .4rem; padding-bottom: .5rem;
   font-family: var(--gcds-font-families-heading, 'Lato', sans-serif); font-weight: 700;
@@ -77,7 +67,6 @@ h1.gc-page-title::after {
   background: var(--gcds-danger-text);
 }
 header .gc-page-title { margin: .4rem 0 .3rem; }
-
 /* Header layout */
 .gc-header {
   display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 1rem;
@@ -87,7 +76,6 @@ header .gc-page-title { margin: .4rem 0 .3rem; }
 .gc-header__title { grid-column: 2; justify-self: center; text-align: center; margin: 0; }
 .gc-header__lang  { grid-column: 3; justify-self: end; }
 .gc-header__title { max-width: min(60ch, 90vw); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
 /* Footer */
 .gc-footer {
   background: var(--gcds-bg-light, #F1F2F3);
@@ -107,26 +95,20 @@ header .gc-page-title { margin: .4rem 0 .3rem; }
 .gc-footer__sig-logo { height: 28px; width: auto; }
 .gc-footer__legal { text-align: right; margin-top: .25rem; color: var(--gcds-text-secondary, #43474E); font-size: 0.75rem; }
 
-/* -----------------------------------------------------------------------
-   3) Panels & grids (sidebars, tool rows)
-   ----------------------------------------------------------------------- */
+/* 3) Panels & grids (sidebars, tool rows) */
 .sidebarPanel, .mainPanel { background-color: var(--gcds-bg-white); padding: 1rem; }
 .sidebarPanel { border-right: 1px solid var(--gcds-border-default); top: .5rem; }
 .sidebarPanel h4 { margin: .4rem 0 .3rem; }
 .sidebarPanel .form-group { margin-bottom: .5rem; }
-
 /* Side-by-side layout for the two radio groups */
 .tz-grid { display:flex; gap: 12px; align-items:flex-start; flex-wrap: wrap; }
 .tz-grid .tz-col { flex: 1 1 0; min-width: 220px; }
 .tz-grid .shiny-input-container { margin-bottom: 8px; }
 .tz-grid .radio { margin-top: 0; margin-bottom: 8px; }
-
 /* Reserve vertical space for mapping UI so layout doesn't jump */
 .mapping-block { min-height: 320px; }
 
-/* -----------------------------------------------------------------------
-   4) Forms & buttons
-   ----------------------------------------------------------------------- */
+/* 4) Forms & buttons */
 .form-control,
 select,
 input[type="text"],
@@ -135,7 +117,6 @@ input[type="date"] {
   width: 100%; padding: .5rem .75rem; font-size: 1rem;
   border: 1px solid #ccc; border-radius: .25rem; background: #fff; color: var(--gcds-text-primary);
 }
-
 /* Buttons (limit to Bootstrap buttons; DT buttons are styled below) */
 .btn, .btn-primary {
   background-color: var(--gcds-bg-primary);
@@ -143,7 +124,6 @@ input[type="date"] {
   border: 0; border-radius: .25rem; padding: .5rem .75rem; cursor: pointer;
 }
 .btn:hover, .btn-primary:hover { background-color: var(--gcds-link-hover); }
-
 /* Upload row: compact horizontal layout */
 .upload-inline { display:flex; align-items:center; gap: 0px; flex-wrap: wrap; }
 .upload-inline .shiny-input-container { margin-bottom: 0; }
@@ -153,9 +133,7 @@ input[type="date"] {
 .upload-inline input[type="checkbox"] { margin-top: 0; }
 .upload-inline .btn { margin-bottom: 0; }
 
-/* -----------------------------------------------------------------------
-   5) Components (cards, placeholder, help, mini-preview, mapping disabled)
-   ----------------------------------------------------------------------- */
+/* 5) Components (cards, placeholder, help, mini-preview, mapping disabled) */
 .gc-card {
   padding:.5rem 1rem;
   border:1px solid var(--gcds-border-default, #7D828B);
@@ -164,11 +142,10 @@ input[type="date"] {
   margin-bottom:1rem;
   overflow: visible; /* let DataTables manage its own scroll */
 }
-
 .gc-card__content { position: relative; }
-
 .gc-card .dataTables_wrapper { max-width:100%; }
-.gc-card .dataTables_wrapper .dataTables_scroll { overflow:hidden; }
+/* NOTE: removed overflow:hidden; allow DT to manage widths for header/body sync */
+/* .gc-card .dataTables_wrapper .dataTables_scroll { overflow:hidden; } */
 
 /* Placeholder region used before results are available */
 .gc-placeholder {
@@ -179,22 +156,18 @@ input[type="date"] {
   font-size: .95rem; color: var(--gcds-text-secondary, #43474E);
   margin-top: .35rem; position: relative; z-index: 1;
 }
-
-/* Hide the placeholder ONLY:
-   - while the DT spinner overlay is visible (load-container lacks .shiny-spinner-hidden),
-   - and after a DataTable exists in the card (.dataTables_wrapper injected). */
+/* Hide the placeholder ONLY while spinner visible and after a DT exists */
 .gc-card__content:has(.shiny-spinner-output-container .load-container:not(.shiny-spinner-hidden)) .gc-placeholder,
 .gc-card:has(.dataTables_wrapper) .gc-placeholder {
   display: none;
 }
-
 /* Keep the card height stable while spinner overlay is visible */
 .gc-card__content:has(.shiny-spinner-output-container .load-container:not(.shiny-spinner-hidden)) .shiny-spinner-output-container {
   min-height: 260px; /* match placeholder height */
   position: relative;
 }
 
-/* Help icon for tooltips */
+/* Help icon */
 .help-icon {
   display:inline-flex; align-items:center; justify-content:center;
   width:1.15em; height:1.15em; margin-left:.35rem; font-weight:700;
@@ -254,9 +227,7 @@ input[type="date"] {
   clip:rect(0,0,0,0) !important; white-space:nowrap !important; border:0 !important;
 }
 
-/* -----------------------------------------------------------------------
-   6) DataTables styling
-   ----------------------------------------------------------------------- */
+/* 6) DataTables styling */
 table.dataTable.gc-dt thead th {
   background-color: var(--gcds-bg-light, #F1F2F3);
   color: var(--gcds-text-primary, #333333);
@@ -269,7 +240,6 @@ table.dataTable.gc-dt tbody td {
   color: var(--gcds-text-primary, #333333);
 }
 table.dataTable.gc-dt.stripe tbody tr:nth-child(even) { background-color: #fafafa; }
-
 .dataTables_wrapper .dataTables_filter input,
 .dataTables_wrapper .dataTables_length select {
   border: 1px solid var(--gcds-border-default, #7D828B);
@@ -277,7 +247,6 @@ table.dataTable.gc-dt.stripe tbody tr:nth-child(even) { background-color: #fafaf
   padding: .25rem .5rem;
   font-family: var(--gcds-font-families-body, 'Noto Sans', sans-serif);
 }
-
 .dataTables_wrapper .dt-buttons .dt-button {
   background-color: var(--gcds-bg-primary, #26374A);
   color: var(--gcds-text-light, #fff);
@@ -291,8 +260,8 @@ table.dataTable.gc-dt.stripe tbody tr:nth-child(even) { background-color: #fafaf
 /* Horizontal scroll lives inside the card */
 .gc-card table.dataTable { width: 100% !important; }
 .gc-card .dataTables_wrapper .dataTables_scrollBody {
-  overflow-y: visible !important;  /* no vertical scroll inside card */
-  overflow-x: auto !important;     /* allow horizontal scroll if needed */
+  overflow-y: auto !important;  /* no vertical scroll inside card */
+  overflow-x: auto !important;  /* allow horizontal scroll if needed */
   width: 100% !important;
 }
 
@@ -301,9 +270,7 @@ table.dataTable.gc-dt.stripe tbody tr:nth-child(even) { background-color: #fafaf
   .gc-dt td, .gc-dt th { white-space: normal; }
 }
 
-/* -----------------------------------------------------------------------
-   7) Responsive tweaks
-   ----------------------------------------------------------------------- */
+/* 7) Responsive tweaks */
 @media (max-width: 600px) {
   .gc-header {
     grid-template-columns: max-content 1fr;
@@ -312,12 +279,21 @@ table.dataTable.gc-dt.stripe tbody tr:nth-child(even) { background-color: #fafaf
   .gc-header__brand { grid-area: brand; }
   .gc-header__lang  { grid-area: lang; justify-self: end; }
   .gc-header__title { grid-area: title; justify-self: center; }
-
-  .gc-footer__wrap { align-items: flex-start; }
-  .gc-footer__sig { align-items: flex-start; }
+  .gc-footer__wrap  { align-items: flex-start; }
+  .gc-footer__sig   { align-items: flex-start; }
   .gc-footer__legal { text-align: left; }
 }
-
 @media (max-width: 480px){
   .tz-grid .tz-col { min-width: 100%; }
 }
+
+/* Simple spinner used by the Run modal */
+.gc-spinner {
+  width: 18px; height: 18px;
+  border: 2px solid #ccc;
+  border-top-color: #2e6f40; /* forest-ish */
+  border-radius: 50%;
+  animation: gc-spin 0.8s linear infinite;
+}
+@keyframes gc-spin { to { transform: rotate(360deg); } }
+``

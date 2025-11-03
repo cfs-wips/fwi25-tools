@@ -1,24 +1,27 @@
 # ui.R (modularized)
-# NOTE: Head tags and assets largely preserved from your original ui.R
 
-# Shinylive/Chromium download workaround wrappers (also provided in mod_utils)
 downloadButton_sl <- function(...) {
   tag <- shiny::downloadButton(...)
   tag$attribs$download <- NULL
   tag
 }
-downloadLink_sl   <- function(...) {
+downloadLink_sl <- function(...) {
   tag <- shiny::downloadLink(...)
   tag$attribs$download <- NULL
   tag
 }
-for (f in list.files("R/modules", pattern = "\\.R$", full.names = TRUE))
+
+for (f in list.files("R/modules", pattern = "\\.R$", full.names = TRUE)) {
   source(f, local = TRUE)
+}
+
 ui <- fluidPage(
   title = NULL,
+  shinyjs::useShinyjs(),
+  
   tags$head(
     tags$title("FWI2025"),
-    # JS handlers: update browser tab title; sync & key aria labels
+    
     tags$script(
       HTML(
         "Shiny.addCustomMessageHandler('set-title', function(msg){try{document.title = msg; if(window.parent && window.parent !== window){window.parent.postMessage({type:'set-title', title: msg}, '*');}}catch(e){}});"
@@ -33,83 +36,119 @@ ui <- fluidPage(
             if (msg && msg.tabs) document.getElementById('tabs-region')?.setAttribute('aria-label', msg.tabs);
           } catch(e){}
         });
-      "
+        "
       )
     ),
     
     tags$script(HTML("
-  document.addEventListener('shiny:recalculating', function(ev){
-    var el = ev.target; if (!el) return;
-    var card = el.closest('.gc-card'); if (card) card.classList.add('busy');
-  });
-  document.addEventListener('shiny:value', function(ev){
-    var el = ev.target; if (!el) return;
-    var card = el.closest('.gc-card'); if (card) card.classList.remove('busy');
-  });
-")),
-    # GCDS fonts & tokens
+      document.addEventListener('shiny:recalculating', function(ev){
+        var el = ev.target; if (!el) return;
+        var card = el.closest('.gc-card'); if (card) card.classList.add('busy');
+      });
+      document.addEventListener('shiny:value', function(ev){
+        var el = ev.target; if (!el) return;
+        var card = el.closest('.gc-card'); if (card) card.classList.remove('busy');
+      });
+    ")),
+    
     tags$link(rel = "stylesheet", href = "https://cdn.jsdelivr.net/npm/@cdssnc/gcds-fonts@1.0.3/dist/gcds-fonts.css"),
     tags$link(rel = "stylesheet", href = "https://cdn.design-system.alpha.canada.ca/cdn/gcds/alpha/0.13.0/tokens.css"),
-    # Custom CSS
     tags$link(rel = "stylesheet", type = "text/css", href = "gc_custom_style.css"),
+    
     tags$style(
       HTML(
-        "\n .gc-card{overflow-x:auto;padding:.5rem 1rem;border:1px solid var(--gcds-border-default,#7D828B);border-radius:6px;background:#fff;margin-bottom:1rem;}\n .gc-card .dataTables_wrapper{overflow-x:auto;}\n "
+        "
+        .gc-card{overflow-x:auto;padding:.5rem 1rem;border:1px solid var(--gcds-border-default,#7D828B);border-radius:6px;background:#fff;margin-bottom:1rem;}
+        .gc-card .dataTables_wrapper{overflow-x:auto;}
+        #results-wrap { display:none; }
+        #plot-wrap    { display:none; }
+        "
       )
     ),
-    # Timezone assets + init
+    
     tags$script(src = "tz.js"),
     tags$script(
       HTML(
-        "\nif (document.readyState === 'complete'){ initializeTZ(); } else { window.addEventListener('load', initializeTZ); }\nfunction initializeTZ(){ try{ var browserTZ = Intl.DateTimeFormat().resolvedOptions().timeZone; if (browserTZ && typeof Shiny !== 'undefined'){ Shiny.setInputValue('tz_browser', browserTZ, {priority:'event'}); } } catch(e){ console.log(e); } }\nShiny.addCustomMessageHandler('tz_lookup', function(msg){ var tz = tzlookup(msg.lat, msg.lon); Shiny.setInputValue('tz_lookup_result', tz, {priority:'event'}); });\n"
+        "
+        if (document.readyState === 'complete'){ initializeTZ(); } else { window.addEventListener('load', initializeTZ); }
+        function initializeTZ(){ try{ var browserTZ = Intl.DateTimeFormat().resolvedOptions().timeZone; if (browserTZ && typeof Shiny !== 'undefined'){ Shiny.setInputValue('tz_browser', browserTZ, {priority:'event'}); } } catch(e){ console.log(e); } }
+        Shiny.addCustomMessageHandler('tz_lookup', function(msg){ var tz = tzlookup(msg.lat, msg.lon); Shiny.setInputValue('tz_lookup_result', tz, {priority:'event'}); });
+        "
       )
-    )
+    ),
+    
+    tags$script(HTML("
+      document.addEventListener('DOMContentLoaded', function(){
+        try { Shiny.setInputValue('.__init__', Math.random(), {priority:'event'}); } catch(e){}
+      });
+    "))
   ),
   
-  # --- Header & language (module) ---
   mod_i18n_ui("i18n"),
   
-  # --- Main ---
   tags$main(
     id = "main-content",
     role = "main",
     `aria-label` = "Hourly FWI application",
+    
     sidebarLayout(
       sidebarPanel(
         width = 4,
-        # Upload
         mod_upload_ui("upload"),
-        # Column mapping
-        mod_mapping_ui("mapping"),
-        tags$hr(),
-        # Time zone
-        mod_timezone_ui("tz"),
-        # Filter
-        mod_filter_ui("filter"),
-        # Initial codes & actions
-        mod_init_ui("init"),
-        mod_actions_ui("actions")
+        tags$form(
+          id = "controls",
+          mod_mapping_ui("mapping"),
+          tags$hr(),
+          mod_timezone_ui("tz"),
+          mod_filter_ui("filter"),
+          mod_init_ui("init"),
+          mod_actions_ui("actions")
+        )
       ),
+      
       mainPanel(
         width = 8,
         tags$div(
           id = "tabs-region",
           role = "region",
           `aria-label` = "Primary output tabs",
+          
           tabsetPanel(
             id = "main_tabs",
+            
             tabPanel(
               title = textOutput("tab_output_title"),
               value = "Output",
-              mod_results_table_ui("results_table"),
-              # FWI87 table (conditional shown in server if calc_fwi87)
-              conditionalPanel("true", mod_fwi87_table_ui("fwi87_table"))
+              
+              tags$div(
+                id = "pre-run-card",
+                class = "gc-card",
+                tags$p("Upload a CSV and click ", tags$strong("Run HFWI"), " to generate tables.")
+              ),
+              
+              tags$div(
+                id = "results-wrap",
+                mod_results_table_ui("results_table"),
+                mod_fwi87_table_ui("fwi87_table")
+              )
             ),
+            
             tabPanel(
               title = textOutput("tab_plot_title"),
               value = "Plot",
-              mod_plot_ui("plot")
+              
+              tags$div(
+                id = "pre-run-plot",
+                class = "gc-card",
+                tags$p("Upload a CSV and click ", tags$strong("Run HFWI"), " to display plots.")
+              ),
+              
+              tags$div(
+                id = "plot-wrap",
+                mod_plot_ui("plot")
+              )
             ),
+            
             tabPanel(
               title = textOutput("tab_log_title"),
               value = "Log",
@@ -121,7 +160,6 @@ ui <- fluidPage(
     )
   ),
   
-  # Footer (unchanged)
   tags$footer(
     class = "gc-footer",
     role = "contentinfo",
@@ -139,9 +177,7 @@ ui <- fluidPage(
       tags$div(
         class = "gc-footer__sig",
         tags$img(src = "nrcan_logo.svg", alt = "Ressources naturelles Canada / Natural Resources Canada", class = "gc-footer__sig-logo"),
-        tags$div(class = "gc-footer__legal", HTML(
-          "© Government of Canada / Gouvernement du Canada"
-        ))
+        tags$div(class = "gc-footer__legal", HTML("© Government of Canada / Gouvernement du Canada"))
       )
     )
   )
