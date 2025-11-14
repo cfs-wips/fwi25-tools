@@ -7,20 +7,20 @@ mod_engine_server <- function(
 ) {
   moduleServer(id, function(input, output, session) {
     
-    # ------------------------------------------------------------------
-    # Source external core (unchanged)
-    # ------------------------------------------------------------------
+    
+    # Source external core (unchanged) ----
+
     source("ng/util.r", local = TRUE)
     source("ng/make_inputs.r", local = TRUE)
     source("ng/NG_FWI.r", local = TRUE)
     
-    # ------------------------------------------------------------------
-    # Numeric rounding policy
-    # ------------------------------------------------------------------
+    
+    # Numeric rounding policy ----
+    
     digits_for_temp <- 2L
     digits_for_rh   <- 0L
     digits_for_ws   <- 1L
-    digits_for_rain <- 1L
+    digits_for_prec <- 1L
     digits_for_ffmc <- 1L
     digits_for_dmc  <- 1L
     digits_for_dc   <- 0L
@@ -93,15 +93,14 @@ mod_engine_server <- function(
         n = nrow(wx),
         t0 = as.numeric(rng[1]), t1 = as.numeric(rng[2]),
         sumT = round(sum(wx$temp, na.rm = TRUE), 2),
-        sumR = round(sum(wx$rain, na.rm = TRUE), 3),
+        sumR = round(sum(wx$prec, na.rm = TRUE), 3),
         lat = suppressWarnings(as.numeric(wx$lat[1])),
         lon = suppressWarnings(as.numeric(wx$long[1]))
       )
     }
     
-    # ------------------------------------------------------------------
-    # Telemetry store
-    # ------------------------------------------------------------------
+
+    # Telemetry store ----
     .metrics <- reactiveVal(list(
       last_event = NA_character_,
       t_shape_ms = NA_real_,
@@ -115,9 +114,9 @@ mod_engine_server <- function(
     ))
     set_metric <- function(upd) .metrics(modifyList(.metrics(), upd, keep.null = TRUE))
     
-    # ------------------------------------------------------------------
-    # Run triggers (simple direct wiring; no modal/no onFlushed)
-    # ------------------------------------------------------------------
+    
+    # Run triggers (simple direct wiring; no modal/no onFlushed) ----
+
     has_run <- reactiveVal(FALSE)
     trigger <- reactiveVal(0L)
     
@@ -145,9 +144,8 @@ mod_engine_server <- function(
     
     debounced_trigger <- shiny::debounce(reactive(trigger()), millis = debounce_ms)
     
-    # ------------------------------------------------------------------
-    # shaped_input (PREVIEW) — the robust version you had
-    # ------------------------------------------------------------------
+
+    # shaped_input ----
     shaped_input_core <- reactive({
       t0 <- proc.time()[["elapsed"]]
       on.exit({
@@ -319,14 +317,14 @@ mod_engine_server <- function(
         base <- list(
           datetime = dt_local,
           timestamp = dt_local,   # downstream expects timestamp==datetime (from dt_local)
-          year = lubridate::year(dt_local),
-          month = lubridate::month(dt_local),
+          yr = lubridate::year(dt_local),
+          mon = lubridate::month(dt_local),
           day = lubridate::day(dt_local),
-          hour = lubridate::hour(dt_local),
+          hr = lubridate::hour(dt_local),
           temp = as.numeric(get_col(df, mapping$col_temp())),
           rh   = as.numeric(get_col(df, mapping$col_rh())),
           ws   = as.numeric(get_col(df, mapping$col_ws())),
-          rain = as.numeric(get_col(df, mapping$col_rain())),
+          prec = as.numeric(get_col(df, mapping$col_rain())),
           lat  = rep(lat_val, nrow(df)),
           long = rep(long_val, nrow(df)),
           tz   = tz_use,
@@ -342,7 +340,7 @@ mod_engine_server <- function(
       validate(need(all(!is.na(wx$temp)), "Temperature has NA after parsing."))
       validate(need(all(!is.na(wx$rh)),   "RH has NA after parsing."))
       validate(need(all(!is.na(wx$ws)),   "Wind has NA after parsing."))
-      validate(need(all(!is.na(wx$rain)), "Rain has NA after parsing."))
+      validate(need(all(!is.na(wx$prec)), "Rain has NA after parsing."))
       
       # Start date coercion (robust)
       start_date_val <- filt$start_date()
@@ -386,7 +384,7 @@ mod_engine_server <- function(
               day  = mapping$col_day(),     hr = mapping$col_hour(),
               date = mapping$col_date(),    time = mapping$col_time(), sol = mapping$col_solrad(),
               t    = mapping$col_temp(),    rh  = mapping$col_rh(),    ws  = mapping$col_ws(),
-              rain = mapping$col_rain(),    id  = mapping$col_id(),
+              prec = mapping$col_rain(),    id  = mapping$col_id(),
               lat  = mapping$manual_lat(),  lon = mapping$manual_lon()
             ),
             tz = list(use = tz$tz_use(), policy = tz$tz_offset_policy(), mode = tz$tz_mode()),
@@ -403,9 +401,8 @@ mod_engine_server <- function(
     # Expose PREVIEW for plots (inputs before Run)
     shaped_input_preview <- shaped_input_core
     
-    # ------------------------------------------------------------------
-    # run_model (FWI25 hourly) — no modal/no progress; same compute
-    # ------------------------------------------------------------------
+    
+    # run_model (FWI25 hourly) ----
     run_model_core <- reactive({
       t0 <- proc.time()[["elapsed"]]
       on.exit({
@@ -436,26 +433,26 @@ mod_engine_server <- function(
               ffmc_old = init$ffmc0(), dmc_old = init$dmc0(), dc_old = init$dc0()
             )
           } else if ("inputs" %in% argn) {
-            out <- hFWI(inputs = inputs, ffmc0 = init$ffmc0(), dmc0 = init$dmc0(), dc0 = init$dc0())
+            out <- hFWI(inputs = inputs, ffmc_old = init$ffmc0(), dmc_old = init$dmc0(), dc_old = init$dc0(),silent=T)
           } else if ("df" %in% argn) {
-            out <- hFWI(df = inputs, ffmc0 = init$ffmc0(), dmc0 = init$dmc0(), dc0 = init$dc0())
+            out <- hFWI(df = inputs, ffmc_old = init$ffmc0(), dmc_old = init$dmc0(), dc_old = init$dc0(),silent=T)
           } else {
             if (length(argn) >= 5) {
-              out <- hFWI(inputs, si$tz_offset, init$ffmc0(), init$dmc0(), init$dc0())
+              out <- hFWI(inputs, si$tz_offset, init$ffmc0(), init$dmc0(), init$dc0(),silent=T)
             } else {
-              out <- hFWI(inputs, init$ffmc0(), init$dmc0(), init$dc0())
+              out <- hFWI(inputs, init$ffmc0(), init$dmc0(), init$dc0(),silent=T)
             }
           }
         } else {
           out <- try(
             hFWI(
               df_wx = inputs, timezone = si$tz_offset,
-              ffmc_old = init$ffmc0(), dmc_old = init$dmc0(), dc_old = init$dc0()
+              ffmc_old = init$ffmc0(), dmc_old = init$dmc0(), dc_old = init$dc0(),silent=T
             ),
             silent = TRUE
           )
           if (inherits(out, "try-error")) {
-            out <- hFWI(inputs = inputs, ffmc0 = init$ffmc0(), dmc0 = init$dmc0(), dc0 = init$dc0())
+            out <- hFWI(df_wx = inputs, ffmc_old = init$ffmc0(), dmc_old = init$dmc0(), dc_old = init$dc0(),silent=T)
           }
         }
       }, silent = TRUE)
@@ -471,7 +468,7 @@ mod_engine_server <- function(
         temp = digits_for_temp,
         rh   = digits_for_rh,
         ws   = digits_for_ws,
-        rain = digits_for_rain,
+        rain = digits_for_prec,
         lat  = lat_digits,
         long = long_digits,
         ffmc = digits_for_ffmc,
@@ -510,9 +507,8 @@ mod_engine_server <- function(
     }
     run_model <- shiny::bindEvent(run_model_tmp, run_click(), debounced_trigger(), ignoreInit = TRUE)
     
-    # ------------------------------------------------------------------
-    # daily_fwi_df (FWI87 daily; per station) — same logic, simple triggers
-    # ------------------------------------------------------------------
+    
+    # daily_fwi_df (FWI87 daily; per station)---- 
     daily_fwi_core <- reactive({
       t0 <- proc.time()[["elapsed"]]
       on.exit({
@@ -682,8 +678,8 @@ mod_engine_server <- function(
         temp = digits_for_temp,
         rh   = digits_for_rh,
         ws   = digits_for_ws,
-        prec = digits_for_rain,
-        precip_12to12 = digits_for_rain,
+        prec = digits_for_prec,
+        precip_12to12 = digits_for_prec,
         lat  = lat_digits,
         long = long_digits,
         ffmc = digits_for_ffmc,
@@ -722,9 +718,8 @@ mod_engine_server <- function(
     }
     daily_fwi_df <- shiny::bindEvent(daily_fwi_tmp, run_click(), debounced_trigger(), ignoreInit = TRUE)
     
-    # ------------------------------------------------------------------
-    # Expose API
-    # ------------------------------------------------------------------
+    
+    # return data ----
     return(list(
       shaped_input         = shaped_input,         # run-bound (Log tab)
       shaped_input_preview = shaped_input_preview, # preview (Plot inputs)
