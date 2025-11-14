@@ -39,6 +39,8 @@ jobs:
             any::ggplot2
             any::shinycssloaders
             any::cffdrs
+            any::plotly
+            any::jsonlite
 
       - name: Verify packages present
         shell: Rscript {0}
@@ -53,6 +55,8 @@ jobs:
           cat("ggplot2        :", as.character(packageVersion("ggplot2")), "\n")
           cat("shinycssloaders:", as.character(packageVersion("shinycssloaders")), "\n")
           cat("cffdrs         :", as.character(packageVersion("cffdrs")), "\n")
+          cat("plotly         :", as.character(packageVersion("plotly")), "\n")
+          cat("jsonlite         :", as.character(packageVersion("jsonlite")), "\n")
 
       - name: Export Shinylive site (with title + parent listener)
         shell: Rscript {0}

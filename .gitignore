@@ -10,3 +10,6 @@ server.txt
 ui.txt
 app/structured_input.csv
 old_cffdrs.txt
+*.txt
+*.zip
+reactlog.json
