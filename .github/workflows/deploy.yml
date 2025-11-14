@@ -41,6 +41,7 @@ jobs:
             any::cffdrs
             any::plotly
             any::jsonlite
+            any::munsell
 
       - name: Verify packages present
         shell: Rscript {0}
@@ -57,6 +58,7 @@ jobs:
           cat("cffdrs         :", as.character(packageVersion("cffdrs")), "\n")
           cat("plotly         :", as.character(packageVersion("plotly")), "\n")
           cat("jsonlite         :", as.character(packageVersion("jsonlite")), "\n")
+          cat("munsell         :", as.character(packageVersion("munsell")), "\n")
 
       - name: Export Shinylive site (with title + parent listener)
         shell: Rscript {0}
