@@ -27,9 +27,13 @@ mod_results_table_ui <- function(id) {
           class = "gc-placeholder", `aria-live` = "polite", `aria-busy` = "true",
           div(class = "gc-placeholder__text", uiOutput(ns("hint")))
         ),
-        shinycssloaders::withSpinner(
+        div(
+          class = "gc-spin-wrap",
           DT::DTOutput(ns("tbl"), width = "100%"),
-          type = 8, color = "#26374A"
+          div(class = "gc-spin-overlay",
+              div(class = "gc-spinner", `aria-hidden` = "true"),
+              span(class = "sr-only", "Loading…")
+          )
         )
       )
     )

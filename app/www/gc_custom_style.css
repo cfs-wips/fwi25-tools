@@ -289,11 +289,57 @@ table.dataTable.gc-dt.stripe tbody tr:nth-child(even) { background-color: #fafaf
 
 /* Simple spinner used by the Run modal */
 .gc-spinner {
-  width: 18px; height: 18px;
+  width: 18px; 
+  height: 18px;
   border: 2px solid #ccc;
   border-top-color: #2e6f40; /* forest-ish */
   border-radius: 50%;
   animation: gc-spin 0.8s linear infinite;
 }
 @keyframes gc-spin { to { transform: rotate(360deg); } }
-``
+
+/* Spinner overlay container for any Shiny output */
+.gc-spin-wrap {
+  position: relative; /* anchor overlay to output area */
+  container-type: inline-size;
+}
+
+/* The overlay itself: centered spinner + optional scrim */
+.gc-spin-overlay {
+  position: absolute;
+  inset: 0;
+  display: none;             /* default hidden */
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.6); /* subtle scrim; tweak or remove */
+  z-index: 2;
+}
+
+/* When Shiny marks the output as recalculating, show the overlay */
+.gc-spin-wrap .shiny-bound-output.recalculating ~ .gc-spin-overlay {
+  display: flex;
+}
+
+/* Make sure the output area reserves some space before first draw (optional) */
+.gc-spin-wrap .shiny-bound-output {
+  min-height: 260px; /* harmonize with your placeholder height */
+}
+
+
+.gc-spin-wrap .gc-spinner {
+  --gc-spin-size: clamp(20px, 8cqw, 80px);
+  --gc-spin-border: max(2px, calc(var(--gc-spin-size) / 12));
+  width: var(--gc-spin-size);
+  height: var(--gc-spin-size);
+  border-width: var(--gc-spin-border);
+}
+
+role="region"][aria-label="FWI plots"] .gc-spinner {
+  --gc-spin-size: clamp(28px, 10cqw, 96px);
+  --gc-spin-border: max(3px, calc(var(--gc-spin-size) / 12));
+}
+
+/* Optional: slow the animation for users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .gc-spinner { animation-duration: 1.6s; }
+

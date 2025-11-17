@@ -430,7 +430,7 @@ mod_engine_server <- function(
           if (all(c("df_wx", "timezone") %in% argn)) {
             out <- hFWI(
               df_wx = inputs, timezone = si$tz_offset,
-              ffmc_old = init$ffmc0(), dmc_old = init$dmc0(), dc_old = init$dc0()
+              ffmc_old = init$ffmc0(), dmc_old = init$dmc0(), dc_old = init$dc0(), silent=T
             )
           } else if ("inputs" %in% argn) {
             out <- hFWI(inputs = inputs, ffmc_old = init$ffmc0(), dmc_old = init$dmc0(), dc_old = init$dc0(),silent=T)

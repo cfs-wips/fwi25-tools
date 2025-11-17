@@ -1,25 +1,6 @@
 # R/modules/mod_utils.R
 `%||%` <- function(a, b) if (is.null(a) || length(a) == 0L) b else a
 
-# Simple GoC theme for ggplot (GCDS colours/fonts)
-theme_goc <- function(base_size = 12, base_family = "Noto Sans") {
-  primary <- "#26374A" # GCDS primary background
-  border  <- "#7D828B" # GCDS border default
-  textcol <- "#333333" # GCDS text primary
-  stripbg <- "#F1F2F3" # GCDS light background
-  ggplot2::theme_minimal(base_size = base_size, base_family = base_family) +
-    ggplot2::theme(
-      plot.title   = ggplot2::element_text(face = "bold", colour = textcol),
-      plot.subtitle= ggplot2::element_text(colour = textcol),
-      plot.caption = ggplot2::element_text(colour = textcol),
-      axis.title   = ggplot2::element_text(face = "bold", colour = textcol),
-      axis.text    = ggplot2::element_text(colour = textcol),
-      panel.grid.minor = ggplot2::element_blank(),
-      panel.grid.major = ggplot2::element_line(colour = border, linewidth = 0.25),
-      strip.text   = ggplot2::element_text(face = "bold", colour = textcol, family = "Lato"),
-      strip.background = ggplot2::element_rect(fill = stripbg, colour = border, linewidth = 0.5)
-    )
-}
 
 # Precip column finder
 find_precip_col <- function(cols){

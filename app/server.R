@@ -1,6 +1,4 @@
-if (interactive()) {
-  reactlog::reactlog_enable()
-}
+
 options(fwi.debug_times = FALSE)
 
 # server.R (modularized)

@@ -44,9 +44,13 @@ mod_plot_ui <- function(id) {
             checkboxInput(ns("facet_free_y"), label = NULL, value = TRUE)
           )
         ),
-        shinycssloaders::withSpinner(
+        div(
+          class = "gc-spin-wrap",
           plotly::plotlyOutput(ns("plot_ts"), height = "80vh"),
-          type = 4
+          div(class = "gc-spin-overlay",
+              div(class = "gc-spinner", `aria-hidden` = "true"),
+              span(class = "sr-only", "Loading…")
+          )
         )
       )
     )
@@ -469,15 +473,26 @@ mod_plot_server <- function(
       # Okabe–Ito palette per station + lightened overlay
       id_vals <- if ("id" %in% names(long_df)) unique(as.character(long_df$id)) else "station"
       n_ids <- length(id_vals)
-      okabe_ito <- c(
-        "#000000", "#E69F00", "#56B4E9", "#009E73",
-        "#F0E442", "#0072B2", "#D55E00", "#CC79A7"
-      )
+      okabe_ito <- grDevices::palette("Okabe-Ito")
       base_cols <- if (n_ids <= length(okabe_ito)) okabe_ito[seq_len(n_ids)] else {
-        colorspace::qualitative_hcl(n = n_ids, palette = "Dark 3")
+        c(okabe_ito,grDevices::palette("Tableau 10"))[n_ids]
       }
       to_fwi25 <- function(hex) hex
-      to_fwi87 <- function(hex) colorspace::lighten(colorspace::desaturate(hex, 0.2), 0.18)
+      to_fwi87 <- function(hex, desaturate_factor = 0.2, lighten_factor = 0.18) {
+        # Convert hex to RGB (0-1 scale)
+        rgb_vals <- col2rgb(hex) / 255
+        
+        # Desaturate: move toward gray by factor
+        gray <- mean(rgb_vals)
+        rgb_vals <- rgb_vals + (gray - rgb_vals) * desaturate_factor
+        
+        # Lighten: increase brightness by factor
+        rgb_vals <- pmin(rgb_vals + lighten_factor, 1)
+        
+        # Convert back to hex
+        grDevices::rgb(rgb_vals[1], rgb_vals[2], rgb_vals[3])
+      }
+      
       if (n_ids == 1L) {
         pal_fwi25 <- c("#E69F00")
         pal_fwi87 <- c("#56B4E9")
