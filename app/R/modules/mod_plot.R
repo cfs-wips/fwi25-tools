@@ -1,5 +1,4 @@
 # R/modules/mod_plot.R
-
 mod_plot_ui <- function(id) {
   ns <- NS(id)
   tagList(
@@ -21,7 +20,7 @@ mod_plot_ui <- function(id) {
                 c("results", "inputs"),
                 c("hFWI results (hourly)", "Input (preview)")
               ),
-              selected = "inputs"  # start with inputs before first run
+              selected = "inputs" # start with inputs before first run
             )
           ),
           column(
@@ -44,6 +43,7 @@ mod_plot_ui <- function(id) {
             checkboxInput(ns("facet_free_y"), label = NULL, value = TRUE)
           )
         ),
+        # Spinner overlay (pure CSS; no dependencies)
         div(
           class = "gc-spin-wrap",
           plotly::plotlyOutput(ns("plot_ts"), height = "80vh"),
@@ -66,7 +66,7 @@ mod_plot_ui <- function(id) {
 #' @param results reactive: hourly hFWI results (post-run)
 #' @param df87 reactive: daily FWI87 results (overlay only; never selectable)
 #' @param tz_reactive reactive( character(1) Olson TZ ), e.g., tz$tz_use
-#' @param ignore_dst_reactive reactive policy (TRUE => standard offset | FALSE => civil/DST)
+#' @param ignore_dst_reactive reactive policy (TRUE => standard offset \n FALSE => civil/DST)
 #' @param tab_active optional reactive() returning active tab value (e.g., input$main_tabs)
 mod_plot_server <- function(
     id, tr, i18n, label_for_col,
@@ -75,8 +75,8 @@ mod_plot_server <- function(
     tab_active = reactive(NULL)
 ) {
   moduleServer(id, function(input, output, session) {
-    
     `%||%` <- function(a, b) if (is.null(a) || length(a) == 0L) b else a
+    
     i18n_or <- function(key, default) {
       val <- tryCatch(tr(key), error = function(e) NULL)
       if (is.null(val)) return(default)
@@ -158,10 +158,10 @@ mod_plot_server <- function(
         inputs  = i18n_or("data_src_inputs",  "Inputs (weather)")
       )
     })
-    
     observe({
       labs <- source_labels()
-      choices_named <- setNames(c("results","inputs"), c(labs[["results"]], labs[["inputs"]]))
+      choices_named <- setNames(c("results","inputs"),
+                                c(labs[["results"]], labs[["inputs"]]))
       current <- isolate(input$plot_dataset)
       pick_default <- if (isTRUE(has_hourly())) "results" else if (isTRUE(has_preview())) "inputs" else "inputs"
       sel <- current
@@ -173,12 +173,12 @@ mod_plot_server <- function(
         selected = sel
       )
     })
-    
-    # When results first appear, flip to "results" and force a draw
+    # Flip to "results" when they first appear
     observeEvent(has_hourly(), {
       if (isTRUE(has_hourly())) {
         labs <- source_labels()
-        choices_named <- setNames(c("results","inputs"), c(labs[["results"]], labs[["inputs"]]))
+        choices_named <- setNames(c("results","inputs"),
+                                  c(labs[["results"]], labs[["inputs"]]))
         updateSelectInput(session, "plot_dataset", choices = choices_named, selected = "results")
         bump_reseed()
       }
@@ -203,7 +203,6 @@ mod_plot_server <- function(
         as.data.frame(results())
       }
       validate(need(NROW(df) > 0, i18n_or("err_dataset_no_rows", "No rows available in the selected dataset.")))
-      
       # find datetime-like column
       name_patt <- "(?i)(^datetime$|^timestamp$|date_time|^date$|^time$|valid_time)"
       dt_candidates <- names(df)[grepl(name_patt, names(df), perl = TRUE)]
@@ -219,12 +218,11 @@ mod_plot_server <- function(
         olson <- tz_reactive() %||% "UTC"
         df$datetime <- lubridate::make_datetime(
           year = as.integer(df$year), month = as.integer(df$month),
-          day = as.integer(df$day), hour = as.integer(df$hour),
+          day  = as.integer(df$day),  hour  = as.integer(df$hour),
           tz = olson
         )
         dt_col <- "datetime"
       }
-      
       validate(need(length(dt_col) == 1, i18n_or("err_no_datetime_found", "Could not infer a time column to plot.")))
       ord <- try(order(df[[dt_col]]), silent = TRUE)
       if (!inherits(ord, "try-error")) df <- df[ord, , drop = FALSE]
@@ -250,7 +248,6 @@ mod_plot_server <- function(
       if (inherits(labs, "try-error") || length(labs) != length(cols)) labs <- cols
       stats::setNames(cols, labs)
     }
-    
     observeEvent(input$plot_dataset, {
       df <- req(data_for_plot())
       dataset_key <- input$plot_dataset %||% "inputs"
@@ -272,7 +269,6 @@ mod_plot_server <- function(
       )
       bump_reseed()
     }, ignoreInit = TRUE, priority = 100)
-    
     observeEvent(data_for_plot(), {
       df <- req(data_for_plot())
       dataset_key <- isolate(input$plot_dataset %||% "inputs")
@@ -299,7 +295,6 @@ mod_plot_server <- function(
       )
       bump_reseed()
     }, ignoreInit = FALSE, priority = 70)
-    
     observeEvent(data_for_plot(), {
       df <- req(data_for_plot())
       if (!length(isolate(input$plot_y_multi))) {
@@ -332,25 +327,19 @@ mod_plot_server <- function(
     
     # ---- ONE-TIME auto-init when Plot tab is first opened and results exist
     plotted_once <- reactiveVal(FALSE)
-    
     observeEvent(list(tab_active(), results()), {
       req(tab_active() == "Plot")
       req(!plotted_once())
-      
       d <- results()
       req(!is.null(d), nrow(as.data.frame(d)) > 0)
-      
       # Ensure dataset is 'results'
       if (is.null(input$plot_dataset) || !identical(input$plot_dataset, "results")) {
         updateSelectInput(session, "plot_dataset", selected = "results")
       }
-      
       # Seed sensible defaults if none yet selected
       if (is.null(input$plot_y_multi) || length(input$plot_y_multi) == 0) {
         cols <- names(as.data.frame(d))
-        # Try preferred FWI indices first (case-insensitive), fall back to first few numerics
         pref_ci <- c("ffmc","dmc","dc","fwi","isi","bui")
-        # find case-insensitive matches preserving case in 'cols'
         pick <- cols[tolower(cols) %in% pref_ci]
         if (length(pick) == 0) {
           num_cols <- cols[vapply(as.data.frame(d)[cols], is.numeric, logical(1))]
@@ -360,7 +349,6 @@ mod_plot_server <- function(
           updateSelectizeInput(session, "plot_y_multi", selected = unique(pick))
         }
       }
-      
       bump_reseed()
       plotted_once(TRUE)
     }, ignoreInit = FALSE, priority = 200)
@@ -369,15 +357,13 @@ mod_plot_server <- function(
     # Helper: add facet titles as annotations above each subplot panel
     add_facet_titles <- function(sp, facet_titles) {
       lay <- sp$x$layout
-      # Collect axis domain names in order: xaxis, xaxis2, ... / yaxis, yaxis2, ...
       xnames <- grep("^xaxis\\d*$", names(lay), value = TRUE)
-      ynames <- gsub("^x", "y", xnames) # xaxisN -> yaxisN (subplot keeps ordering)
+      ynames <- gsub("^x", "y", xnames)
       ann <- list()
       for (i in seq_along(facet_titles)) {
         xn <- xnames[i]; yn <- ynames[i]
         if (is.null(lay[[xn]]$domain) || is.null(lay[[yn]]$domain)) next
         xd <- lay[[xn]]$domain; yd <- lay[[yn]]$domain
-        # Place annotation centered in x (paper coords) slightly above panel (paper y)
         ann[[length(ann) + 1L]] <- list(
           text = facet_titles[i],
           x = mean(xd), xref = "paper",
@@ -387,13 +373,13 @@ mod_plot_server <- function(
           font = list(size = 12, family = "sans")
         )
       }
-      # Increase top margin to make space for headers
       sp <- plotly::layout(sp, annotations = c(lay$annotations %||% list(), ann), margin = list(t = 80))
       sp
     }
     
     output$plot_ts <- plotly::renderPlotly({
       reseed_tick() # force redraw after seeding
+      
       df <- data_for_plot()
       dt_col <- attr(df, "dt_col")
       req(length(input$plot_y_multi) >= 1)
@@ -403,29 +389,32 @@ mod_plot_server <- function(
       df_small <- df[, keep_cols, drop = FALSE]
       common <- intersect(yvars, names(df_small))
       validate(need(length(common) > 0,
-                    i18n_or("err_no_selected_vars_in_dataset", "Selected variables not present in this dataset.")))
+                    i18n_or("err_no_selected_vars_in_dataset", "Selected variables not present in this dataset.")
+      ))
       
-      # Long format
-      long_df <- df_small |>
-        tidyr::pivot_longer(
-          cols = match(common, names(df_small)),
-          names_to = "variable", values_to = "value"
-        ) |>
-        dplyr::filter(!is.na(.data$value))
+      # -------- Long format via data.table::melt (replacing tidyr::pivot_longer + dplyr::filter)
+      DT <- data.table::as.data.table(data.table::copy(df_small))
+      id_keep <- intersect(c(dt_col, "id"), names(DT))
+      long_df <- data.table::melt(
+        DT,
+        id.vars       = id_keep,
+        measure.vars  = common,
+        variable.name = "variable",
+        value.name    = "value",
+        variable.factor = FALSE
+      )
+      long_df <- long_df[!is.na(value)]
       
       # Variable labels (facet headers, localized via your helper)
       var_label_levels <- vapply(common, function(v) label_for_col(v, type = "short"), character(1))
-      long_df$var_label <- vapply(
-        as.character(long_df$variable),
-        function(v) label_for_col(v, type = "short"),
-        character(1)
-      )
-      long_df$var_label <- factor(long_df$var_label, levels = var_label_levels)
+      long_df[, var_label := vapply(as.character(variable), function(v)
+        label_for_col(v, type = "short"), character(1)) ]
+      long_df[, var_label := factor(var_label, levels = var_label_levels)]
       
       # Legend/source labels
       lab_fwi25 <- i18n_or("legend_fwi25", "FWI25 (hourly)")
       lab_fwi87 <- i18n_or("legend_fwi87", "FWI87 (daily)")
-      long_df$source <- lab_fwi25
+      long_df[, source := lab_fwi25]
       
       # Optional overlay (dataset == "results")
       overlay_df <- NULL
@@ -444,19 +433,23 @@ mod_plot_server <- function(
             if (length(common87)) {
               keep87 <- unique(c(dt87, common87, "id"))
               d87_small <- d87[, intersect(keep87, names(d87)), drop = FALSE]
-              overlay_df <- d87_small |>
-                tidyr::pivot_longer(
-                  cols = match(common87, names(d87_small)),
-                  names_to = "variable", values_to = "value") |>
-                dplyr::filter(!is.na(.data$value))
+              
+              DT87 <- data.table::as.data.table(data.table::copy(d87_small))
+              id_keep87 <- intersect(c("datetime","id"), names(DT87))
+              overlay_df <- data.table::melt(
+                DT87,
+                id.vars       = id_keep87,
+                measure.vars  = common87,
+                variable.name = "variable",
+                value.name    = "value",
+                variable.factor = FALSE
+              )
+              overlay_df <- overlay_df[!is.na(value)]
               if (NROW(overlay_df)) {
-                overlay_df$var_label <- vapply(
-                  as.character(overlay_df$variable),
-                  function(v) label_for_col(v, type = "short"),
-                  character(1)
-                )
-                overlay_df$var_label <- factor(overlay_df$var_label, levels = var_label_levels)
-                overlay_df$source <- lab_fwi87
+                overlay_df[, var_label := vapply(as.character(variable),
+                                                 function(v) label_for_col(v, type = "short"), character(1))]
+                overlay_df[, var_label := factor(var_label, levels = var_label_levels)]
+                overlay_df[, source := lab_fwi87]
               } else {
                 overlay_df <- NULL
               }
@@ -466,38 +459,37 @@ mod_plot_server <- function(
       }
       
       # Round numeric for tooltips (cosmetic)
-      long_df  <- dplyr::mutate(long_df,  dplyr::across(dplyr::where(is.numeric), ~ round(.x, 3)))
-      if (!is.null(overlay_df))
-        overlay_df <- dplyr::mutate(overlay_df, dplyr::across(dplyr::where(is.numeric), ~ round(.x, 3)))
+      num_cols <- names(long_df)[vapply(long_df, is.numeric, logical(1))]
+      if (length(num_cols)) {
+        long_df[, (num_cols) := lapply(.SD, function(x) round(x, 3)), .SDcols = num_cols]
+      }
+      if (!is.null(overlay_df)) {
+        num_cols2 <- names(overlay_df)[vapply(overlay_df, is.numeric, logical(1))]
+        if (length(num_cols2)) {
+          overlay_df[, (num_cols2) := lapply(.SD, function(x) round(x, 3)), .SDcols = num_cols2]
+        }
+      }
       
       # Series key per source × station
       get_id_str <- function(d) if ("id" %in% names(d)) as.character(d$id) else "station"
-      long_df$series_id <- paste(long_df$source, get_id_str(long_df), sep = "__")
-      if (!is.null(overlay_df)) overlay_df$series_id <- paste(overlay_df$source, get_id_str(overlay_df), sep = "__")
+      long_df[, series_id := paste(source, get_id_str(.SD), sep = "__")]
+      if (!is.null(overlay_df)) overlay_df[, series_id := paste(source, get_id_str(.SD), sep = "__")]
       
       # Okabe–Ito palette per station + lightened overlay
       id_vals <- if ("id" %in% names(long_df)) unique(as.character(long_df$id)) else "station"
       n_ids <- length(id_vals)
       okabe_ito <- grDevices::palette("Okabe-Ito")
       base_cols <- if (n_ids <= length(okabe_ito)) okabe_ito[seq_len(n_ids)] else {
-        c(okabe_ito,grDevices::palette("Tableau 10"))[n_ids]
+        c(okabe_ito, grDevices::palette("Tableau 10"))[n_ids]
       }
       to_fwi25 <- function(hex) hex
       to_fwi87 <- function(hex, desaturate_factor = 0.2, lighten_factor = 0.18) {
-        # Convert hex to RGB (0-1 scale)
         rgb_vals <- col2rgb(hex) / 255
-        
-        # Desaturate: move toward gray by factor
         gray <- mean(rgb_vals)
         rgb_vals <- rgb_vals + (gray - rgb_vals) * desaturate_factor
-        
-        # Lighten: increase brightness by factor
         rgb_vals <- pmin(rgb_vals + lighten_factor, 1)
-        
-        # Convert back to hex
         grDevices::rgb(rgb_vals[1], rgb_vals[2], rgb_vals[3])
       }
-      
       if (n_ids == 1L) {
         pal_fwi25 <- c("#E69F00")
         pal_fwi87 <- c("#56B4E9")
@@ -513,8 +505,8 @@ mod_plot_server <- function(
       tz_use <- tz_reactive() %||% "UTC"
       use_std <- normalize_policy(ignore_dst_reactive())
       x_col <- attr(df, "dt_col")
-      long_df$x_plot <- compute_x_plot(long_df[[x_col]], tz_use, use_std)
-      if (!is.null(overlay_df)) overlay_df$x_plot <- compute_x_plot(overlay_df$datetime, tz_use, use_std)
+      long_df[, x_plot := compute_x_plot(get(x_col), tz_use, use_std)]
+      if (!is.null(overlay_df)) overlay_df[, x_plot := compute_x_plot(datetime, tz_use, use_std)]
       
       # Build subplots by facet (var_label) with a single global legend
       ncol_facets <- {
@@ -535,6 +527,7 @@ mod_plot_server <- function(
       make_facet_fig <- function(f_label) {
         sub_main <- long_df[long_df$var_label == f_label, , drop = FALSE]
         sub_ovl  <- if (!is.null(overlay_df)) overlay_df[overlay_df$var_label == f_label, , drop = FALSE] else NULL
+        
         add_traces_for <- function(fig, dat) {
           if (is.null(dat) || !NROW(dat)) return(fig)
           keys <- unique(dat$series_id)
@@ -596,14 +589,12 @@ mod_plot_server <- function(
           margin = 0.03
         )
       )
-      
       title_txt <- if (length(common) == 1) {
         sprintf(i18n_or("plot_var_over_time", "%s over time"),
                 label_for_col(common[1], type = "short"))
       } else {
         i18n_or("plot_sel_vars_over_time", "Selected variables over time")
       }
-      
       sp <- plotly::layout(
         sp,
         title = list(text = title_txt),
@@ -612,10 +603,7 @@ mod_plot_server <- function(
       )
       sp <- plotly::config(sp, displaylogo = FALSE,
                            modeBarButtonsToRemove = c("select2d","lasso2d"))
-      
-      # facet titles as annotations above each panel
       sp <- add_facet_titles(sp, facet_titles = facet_levels)
-      
       sp
     })
     outputOptions(output, "plot_ts", suspendWhenHidden = FALSE)

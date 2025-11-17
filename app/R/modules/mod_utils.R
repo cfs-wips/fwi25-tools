@@ -1,7 +1,6 @@
 # R/modules/mod_utils.R
 `%||%` <- function(a, b) if (is.null(a) || length(a) == 0L) b else a
 
-
 # Precip column finder
 find_precip_col <- function(cols){
   cands <- c("rain","precip","prec","prcp","rf")
@@ -15,7 +14,6 @@ downloadButton_sl <- function(...) {
   tag$attribs$download <- NULL
   tag
 }
-
 downloadLink_sl <- function(...) {
   tag <- shiny::downloadLink(...)
   tag$attribs$download <- NULL
@@ -23,22 +21,31 @@ downloadLink_sl <- function(...) {
 }
 
 # Nearest-to-noon record per local day (optionally per station id)
+# data.table version (no dplyr/rlang)
 nearest_noon_per_day <- function(df, dt_col = "datetime", hour_col = "hour",
                                  tz = "UTC", id_col = NULL){
   stopifnot(dt_col %in% names(df), hour_col %in% names(df))
-  df$date_local <- as.Date(df[[dt_col]], tz = tz)
   
-  # If an id column is provided and exists, do it per (id, date_local)
-  if (!is.null(id_col) && id_col %in% names(df)) {
-    id_sym <- rlang::sym(id_col)
-    dplyr::group_by(df, !!id_sym, .data$date_local) |>
-      dplyr::slice_min(abs(.data[[hour_col]] - 12), with_ties = FALSE) |>
-      dplyr::ungroup()
+  # Work on a copy to avoid by-reference side effects on reactive data
+  DT <- data.table::as.data.table(data.table::copy(df))
+  
+  # Local civil date and absolute distance to noon
+  DT[, date_local := as.Date(get(dt_col), tz = tz)]
+  DT[, dist := abs(get(hour_col) - 12)]
+  
+  # Select the closest-to-noon row per group
+  if (!is.null(id_col) && id_col %in% names(DT)) {
+    data.table::setorder(DT, dist)
+    ans <- DT[, .SD[1L], by = .(grp = get(id_col), date_local)]
+    data.table::setnames(ans, "grp", id_col)
   } else {
-    dplyr::group_by(df, .data$date_local) |>
-      dplyr::slice_min(abs(.data[[hour_col]] - 12), with_ties = FALSE) |>
-      dplyr::ungroup()
+    data.table::setorder(DT, dist)
+    ans <- DT[, .SD[1L], by = .(date_local)]
   }
+  
+  # Drop helper column(s) and return as data.table (data.frame-compatible)
+  ans[, dist := NULL]
+  ans[]
 }
 
 # Time zone helpers
@@ -51,12 +58,10 @@ parse_z_to_hours <- function(z_txt){
   mm <- suppressWarnings(as.integer(substr(z_txt, 4, 5)))
   sgn * (hh + (mm/60))
 }
-
 tz_standard_offset_hours <- function(tz, probe_date = "2025-01-15 12:00:00"){
   probe <- as.POSIXct(probe_date, tz = tz)
   parse_z_to_hours(format(probe, "%z"))
 }
-
 tz_modal_offset_hours <- function(datetimes){
   z_txt <- format(datetimes, "%z")
   z_txt <- z_txt[nzchar(z_txt)]

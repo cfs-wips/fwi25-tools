@@ -308,7 +308,7 @@ mod_engine_server <- function(
         validate(need(is.numeric(sol_col), "Solar radiation must be numeric if provided."))
       }
       
-      # Build shaped inputs tibble (carry id if mapped)
+      # Build shaped inputs  (carry id if mapped)
       lat_val  <- suppressWarnings(as.numeric(mapping$manual_lat()))
       long_val <- suppressWarnings(as.numeric(mapping$manual_lon()))
       id_col   <- get_col(df, mapping$col_id())
@@ -331,7 +331,7 @@ mod_engine_server <- function(
           id   = if (!is.null(id_col)) as.character(id_col) else rep_len(NA_character_, nrow(df))
         )
         if (include_solrad) base$solrad <- as.numeric(sol_col)
-        tibble::tibble(!!!base)
+        data.frame(base,stringsAsFactors = F)
       }
       
       wx <- if (!is.null(sol_col)) make_wx(include_solrad = TRUE) else make_wx(include_solrad = FALSE)
