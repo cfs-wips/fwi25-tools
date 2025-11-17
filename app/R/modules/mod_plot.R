@@ -407,7 +407,10 @@ mod_plot_server <- function(
       
       # Long format
       long_df <- df_small |>
-        tidyr::pivot_longer(cols = tidyselect::all_of(common), names_to = "variable", values_to = "value") |>
+        tidyr::pivot_longer(
+          cols = match(common, names(df_small)),
+          names_to = "variable", values_to = "value"
+        ) |>
         dplyr::filter(!is.na(.data$value))
       
       # Variable labels (facet headers, localized via your helper)
@@ -442,7 +445,9 @@ mod_plot_server <- function(
               keep87 <- unique(c(dt87, common87, "id"))
               d87_small <- d87[, intersect(keep87, names(d87)), drop = FALSE]
               overlay_df <- d87_small |>
-                tidyr::pivot_longer(cols = tidyselect::all_of(common87), names_to = "variable", values_to = "value") |>
+                tidyr::pivot_longer(
+                  cols = match(common87, names(d87_small)),
+                  names_to = "variable", values_to = "value") |>
                 dplyr::filter(!is.na(.data$value))
               if (NROW(overlay_df)) {
                 overlay_df$var_label <- vapply(

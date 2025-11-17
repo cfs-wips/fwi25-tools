@@ -159,7 +159,7 @@ mod_engine_server <- function(
       }, add = TRUE)
       
       validate(need(!is.null(raw_file()), "Upload a CSV first."))
-      df <- tibble::as_tibble(raw_file())
+      df <- data.frame(raw_file(),stringsAsFactors = FALSE)
       
       # required numeric mappings
       needed <- c(mapping$col_temp(), mapping$col_rh(), mapping$col_ws(), mapping$col_rain())
