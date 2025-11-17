@@ -23,7 +23,7 @@ jobs:
       - name: Setup R
         uses: r-lib/actions/setup-r@v2
         with:
-          use-public-rspm: true  # fast CRAN binaries on Linux
+          use-public-rspm: true
 
       - name: Cache R packages
         uses: actions/cache@v4
@@ -33,7 +33,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-r-
 
-      # Install only what export() and your build need
+      # Install only required packages
       - name: Install R packages
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
@@ -56,79 +56,51 @@ jobs:
             data.table
             cffdrs
 
-      - name: Verify packages present
+      # ✅ Install munsell locally so shinylive::export can bundle it
+      - name: Install missing dependency (munsell)
         shell: Rscript {0}
         run: |
-          pkgs <- c("shinylive","shiny","DT","plotly","jsonlite","lubridate","data.table","cffdrs")
-          for (p in pkgs) cat(sprintf("%-12s: %s\n", p, as.character(packageVersion(p))))
+          install.packages("munsell")
 
-      # ---------- NEW: Fail-fast check for WebR (Wasm) package availability ----------
+      # ✅ Fail-fast check for WebR Wasm availability
       - name: Check WebR (Wasm) package availability
         shell: Rscript {0}
         env:
-          WEBR_REPO: ${{ vars.WEBR_REPO }}  # optional override; defaults to repo.r-wasm.org
+          WEBR_REPO: ${{ vars.WEBR_REPO }}  # optional override
         run: |
-          # Required Wasm packages for your app to run without runtime installs
-          needed <- c("shiny","DT","plotly","jsonlite","lubridate","data.table","cffdrs")
-
-          # Determine repository to query
+          needed <- c("shiny","DT","plotly","jsonlite","lubridate","data.table","cffdrs","munsell")
           repo <- Sys.getenv("WEBR_REPO")
           if (!nzchar(repo)) repo <- "https://repo.r-wasm.org/"
-
-          # Build the contrib URL for Emscripten binaries (standard structure)
           contrib <- file.path(repo, "bin/emscripten/contrib")
-
-          # Query available packages from the WebR repo
-          ap <- tryCatch(
-            available.packages(contriburl = contrib),
-            error = function(e) {
-              message("ERROR querying WebR repo: ", repo, "\n", conditionMessage(e))
-              NULL
-            }
-          )
-          if (is.null(ap)) stop("Could not query WebR binary repository: ", repo)
-
-          # Find what's missing
+          ap <- tryCatch(available.packages(contriburl = contrib), error = function(e) NULL)
+          if (is.null(ap)) stop("Could not query WebR repo: ", repo)
           missing <- setdiff(needed, rownames(ap))
           if (length(missing)) {
-            msg <- paste0(
-              "Missing WebR (Wasm) binaries: ", paste(missing, collapse = ", "),
-              "\nEither:\n",
-              "  • publish Wasm binaries for these packages (e.g., using r-wasm/rwasm) and host them\n",
-              "    in a CRAN-like repo (GitHub Pages is fine), then set WEBR_REPO to that URL; or\n",
-              "  • remove them from the 'needed' set above if they are not required at first load."
-            )
-            stop(msg)
+            stop("Missing WebR binaries: ", paste(missing, collapse = ", "),
+                 "\nBuild them with rwasm or host them in your own repo, then set WEBR_REPO.")
           } else {
             cat("All required WebR binaries found in repo:", repo, "\n")
           }
 
+      # Export Shinylive site
       - name: Export Shinylive site
         shell: Rscript {0}
         env:
-          WEBR_REPO: ${{ vars.WEBR_REPO }} # optional override for export
+          WEBR_REPO: ${{ vars.WEBR_REPO }}
         run: |
-          # If you self-host a CRAN-like WebR repo, optionally point export to it
           if (nzchar(Sys.getenv("WEBR_REPO"))) {
             options(repos = c(WEbr = Sys.getenv("WEBR_REPO"), CRAN = getOption("repos")["CRAN"]))
           }
-
           dir.create("docs", showWarnings = FALSE)
-
-          include_head <- ""
-
           shinylive::export(
             appdir        = "app",
             destdir       = "docs",
             wasm_packages = TRUE,
             max_filesize  = "200M",
             template_params = list(
-              title = "Hourly FWI (NG‑CFFDRS)",
-              include_in_head = include_head
+              title = "Hourly FWI (NG‑CFFDRS)"
             )
           )
-
-          # Ensure GitHub Pages serves all assets under /docs
           file.create(file.path("docs", ".nojekyll"))
 
       - name: Upload GitHub Pages artifact

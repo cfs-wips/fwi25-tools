@@ -1,8 +1,11 @@
 options(fwi.debug_times = FALSE)
 
+# Set a safe default for all bindCache() calls that don't pass cache=
+options(shiny.bindcache.default = "session")
+
 # server.R (modularized)
 library(shiny)
-
+library(munsell)
 # Source NG-CFFDRS vendored code
 source("ng/util.r",        local = FALSE)
 source("ng/make_inputs.r", local = FALSE)
@@ -55,7 +58,8 @@ server <- function(input, output, session) {
     raw_file = up$raw_file, mapping = map, tz = tz, filt = fil, init = init, tr = tr,
     run_click = reactive(run_token()),   
     debounce_ms = 400,
-    cache = "app", enable_cache = TRUE
+    cache = "session",
+    enable_cache = TRUE
   )
   
   # ---- Plot reseed on Plot tab enter (unchanged) ----
