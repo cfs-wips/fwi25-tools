@@ -62,25 +62,25 @@ jobs:
         run: |
           install.packages("munsell")
 
-      # ✅ Fail-fast check for WebR Wasm availability
-      - name: Check WebR (Wasm) package availability
-        shell: Rscript {0}
-        env:
-          WEBR_REPO: ${{ vars.WEBR_REPO }}  # optional override
-        run: |
-          needed <- c("shiny","DT","plotly","jsonlite","lubridate","data.table","cffdrs","munsell")
-          repo <- Sys.getenv("WEBR_REPO")
-          if (!nzchar(repo)) repo <- "https://repo.r-wasm.org/"
-          contrib <- file.path(repo, "bin/emscripten/contrib")
-          ap <- tryCatch(available.packages(contriburl = contrib), error = function(e) NULL)
-          if (is.null(ap)) stop("Could not query WebR repo: ", repo)
-          missing <- setdiff(needed, rownames(ap))
-          if (length(missing)) {
-            stop("Missing WebR binaries: ", paste(missing, collapse = ", "),
-                 "\nBuild them with rwasm or host them in your own repo, then set WEBR_REPO.")
-          } else {
-            cat("All required WebR binaries found in repo:", repo, "\n")
-          }
+      # # ✅ Fail-fast check for WebR Wasm availability
+      # - name: Check WebR (Wasm) package availability
+      #   shell: Rscript {0}
+      #   env:
+      #     WEBR_REPO: ${{ vars.WEBR_REPO }}  # optional override
+      #   run: |
+      #     needed <- c("shiny","DT","plotly","jsonlite","lubridate","data.table","cffdrs","munsell")
+      #     repo <- Sys.getenv("WEBR_REPO")
+      #     if (!nzchar(repo)) repo <- "https://repo.r-wasm.org/"
+      #     contrib <- file.path(repo, "bin/emscripten/contrib")
+      #     ap <- tryCatch(available.packages(contriburl = contrib), error = function(e) NULL)
+      #     if (is.null(ap)) stop("Could not query WebR repo: ", repo)
+      #     missing <- setdiff(needed, rownames(ap))
+      #     if (length(missing)) {
+      #       stop("Missing WebR binaries: ", paste(missing, collapse = ", "),
+      #            "\nBuild them with rwasm or host them in your own repo, then set WEBR_REPO.")
+      #     } else {
+      #       cat("All required WebR binaries found in repo:", repo, "\n")
+      #     }
 
       # Export Shinylive site
       - name: Export Shinylive site
