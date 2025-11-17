@@ -52,6 +52,16 @@ server <- function(input, output, session) {
     csv_name = up$csv_name
   )
   
+  prep <- mod_prepare_server(
+    id        = "prepare",
+    raw_file  = up$raw_file,     # use uploaded df so we don't depend on engine internals
+    mapping   = map,             # your mapping module outputs
+    tz        = tz,              # pass the whole tz module (we use tz$tz_use + helpers)
+    filt      = fil,             # optional: restrict to filtered range if desired
+    diurnal_method_reactive = reactive(input$diurnal_method %||% "BT-default"),
+    skip_invalid = TRUE
+  )
+  
   # ---- Engine (compute on run_token instead of button directly) ----
   eng <- mod_engine_server(
     "engine",
@@ -146,6 +156,7 @@ server <- function(input, output, session) {
     raw_file     = up$raw_file,
     df87         = reactive(eng$daily_fwi_df()),
     init         = init,
-    metrics      = eng$metrics
+    metrics      = eng$metrics,
+    prep_meta    = prep$prep_meta
   )
 }

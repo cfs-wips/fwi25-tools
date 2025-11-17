@@ -7,13 +7,26 @@ mod_log_ui <- function(id){
            verbatimTextOutput(ns("log"), placeholder = TRUE))
 }
 
-mod_log_server <- function(id, shaped_input, raw_file, df87, init, metrics = NULL){
+mod_log_server <- function(id, shaped_input, raw_file, df87, init, 
+                           metrics = NULL, prep_meta = NULL){
   moduleServer(id, function(input, output, session){
     
     `%||%` <- function(a,b) if (is.null(a) || is.na(a)) b else a
     
     output$log <- renderPrint({
       si <- shaped_input()
+      
+      
+      if (!is.null(prep_meta)) {
+        pm <- prep_meta()
+        if (!is.null(pm) && length(pm$log)) {
+          cat("--- Prepare step ---\n")
+          for (ln in pm$log) cat(ln, "\n")
+          cat("\n")
+        }
+      }
+      
+      
       cat("Rows read:", nrow(req(raw_file())), "\n")
       if (!is.null(si$start_date) && !is.na(si$start_date))
         cat("Start-date filter (local):", as.character(si$start_date), "\n")

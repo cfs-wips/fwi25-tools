@@ -1,5 +1,5 @@
 # R/modules/mod_plot.R
-
+library(munsell)
 mod_plot_ui <- function(id) {
   ns <- NS(id)
   tagList(
