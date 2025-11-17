@@ -15,78 +15,121 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up R
+      - name: Setup R
         uses: r-lib/actions/setup-r@v2
         with:
           use-public-rspm: true  # fast CRAN binaries on Linux
 
-      - name: Install R packages via r-lib/actions
+      - name: Cache R packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.R_LIBS_USER }}
+          key: ${{ runner.os }}-r-${{ hashFiles('**/*.R', '**/*.Rmd', '**/DESCRIPTION', '**/renv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-r-
+
+      # Install only what export() and your build need
+      - name: Install R packages
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          # Add anything your app/export needs.
           extra-packages: |
             any::shinylive
             any::shiny
             any::DT
-            any::data.table
-            any::dplyr
-            any::lubridate
-            any::tidyr
-            any::ggplot2
-            any::shinycssloaders
-            any::cffdrs
             any::plotly
             any::jsonlite
-            any::munsell
+            any::lubridate
+            any::data.table
+            any::cffdrs
+          needs: |
+            shinylive
+            shiny
+            DT
+            plotly
+            jsonlite
+            lubridate
+            data.table
+            cffdrs
 
       - name: Verify packages present
         shell: Rscript {0}
         run: |
-          cat("shinylive      :", as.character(packageVersion("shinylive")), "\n")
-          cat("shiny          :", as.character(packageVersion("shiny")), "\n")
-          cat("DT             :", as.character(packageVersion("DT")), "\n")
-          cat("data.table     :", as.character(packageVersion("data.table")), "\n")
-          cat("dplyr          :", as.character(packageVersion("dplyr")), "\n")
-          cat("lubridate      :", as.character(packageVersion("lubridate")), "\n")
-          cat("tidyr          :", as.character(packageVersion("tidyr")), "\n")
-          cat("ggplot2        :", as.character(packageVersion("ggplot2")), "\n")
-          cat("shinycssloaders:", as.character(packageVersion("shinycssloaders")), "\n")
-          cat("cffdrs         :", as.character(packageVersion("cffdrs")), "\n")
-          cat("plotly         :", as.character(packageVersion("plotly")), "\n")
-          cat("jsonlite         :", as.character(packageVersion("jsonlite")), "\n")
-          cat("munsell         :", as.character(packageVersion("munsell")), "\n")
+          pkgs <- c("shinylive","shiny","DT","plotly","jsonlite","lubridate","data.table","cffdrs")
+          for (p in pkgs) cat(sprintf("%-12s: %s\n", p, as.character(packageVersion(p))))
 
-      - name: Export Shinylive site (with title + parent listener)
+      # ---------- NEW: Fail-fast check for WebR (Wasm) package availability ----------
+      - name: Check WebR (Wasm) package availability
         shell: Rscript {0}
+        env:
+          WEBR_REPO: ${{ vars.WEBR_REPO }}  # optional override; defaults to repo.r-wasm.org
         run: |
+          # Required Wasm packages for your app to run without runtime installs
+          needed <- c("shiny","DT","plotly","jsonlite","lubridate","data.table","cffdrs")
+
+          # Determine repository to query
+          repo <- Sys.getenv("WEBR_REPO")
+          if (!nzchar(repo)) repo <- "https://repo.r-wasm.org/"
+
+          # Build the contrib URL for Emscripten binaries (standard structure)
+          contrib <- file.path(repo, "bin/emscripten/contrib")
+
+          # Query available packages from the WebR repo
+          ap <- tryCatch(
+            available.packages(contriburl = contrib),
+            error = function(e) {
+              message("ERROR querying WebR repo: ", repo, "\n", conditionMessage(e))
+              NULL
+            }
+          )
+          if (is.null(ap)) stop("Could not query WebR binary repository: ", repo)
+
+          # Find what's missing
+          missing <- setdiff(needed, rownames(ap))
+          if (length(missing)) {
+            msg <- paste0(
+              "Missing WebR (Wasm) binaries: ", paste(missing, collapse = ", "),
+              "\nEither:\n",
+              "  • publish Wasm binaries for these packages (e.g., using r-wasm/rwasm) and host them\n",
+              "    in a CRAN-like repo (GitHub Pages is fine), then set WEBR_REPO to that URL; or\n",
+              "  • remove them from the 'needed' set above if they are not required at first load."
+            )
+            stop(msg)
+          } else {
+            cat("All required WebR binaries found in repo:", repo, "\n")
+          }
+
+      - name: Export Shinylive site
+        shell: Rscript {0}
+        env:
+          WEBR_REPO: ${{ vars.WEBR_REPO }} # optional override for export
+        run: |
+          # If you self-host a CRAN-like WebR repo, optionally point export to it
+          if (nzchar(Sys.getenv("WEBR_REPO"))) {
+            options(repos = c(WEbr = Sys.getenv("WEBR_REPO"), CRAN = getOption("repos")["CRAN"]))
+          }
+
           dir.create("docs", showWarnings = FALSE)
 
-          # Parent-page listener to update the tab title when app posts a message
-          include_head <- paste0(
-            "<script>",
-            "window.addEventListener('message', function(e){",
-            "  if(e && e.data && e.data.type==='set-title' && typeof e.data.title==='string'){",
-            "    try{ document.title = e.data.title; }catch(err){}",
-            "  }",
-            "}, false);",
-            "</script>"
-          )
+          include_head <- ""
 
           shinylive::export(
-            "app", "docs",
+            appdir        = "app",
+            destdir       = "docs",
             wasm_packages = TRUE,
-            max_filesize = "200M",
+            max_filesize  = "200M",
             template_params = list(
-              # Initial page title before your app runs (EN default)
               title = "Hourly FWI (NG‑CFFDRS)",
-              # Inject the parent listener into <head> of docs/index.html
               include_in_head = include_head
             )
           )
+
+          # Ensure GitHub Pages serves all assets under /docs
+          file.create(file.path("docs", ".nojekyll"))
 
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3

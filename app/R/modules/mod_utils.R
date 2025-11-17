@@ -28,9 +28,9 @@ nearest_noon_per_day <- function(df, dt_col = "datetime", hour_col = "hour",
   
   # Work on a copy to avoid by-reference side effects on reactive data
   DT <- data.table::as.data.table(data.table::copy(df))
-  
+  tz_local=tz
   # Local civil date and absolute distance to noon
-  DT[, date_local := as.Date(get(dt_col), tz = tz)]
+  DT[, date_local := as.Date(get(dt_col), tz = tz_local)]
   DT[, dist := abs(get(hour_col) - 12)]
   
   # Select the closest-to-noon row per group
