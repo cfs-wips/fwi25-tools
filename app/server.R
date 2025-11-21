@@ -43,38 +43,57 @@ server <- function(input, output, session) {
 
   # ---- Prepare (daily→hourly) ----
   prep <- mod_prepare_server(
-    "prepare",
+    id = "prepare",
     raw_file = up$raw_file,
     mapping = map,
     tz = tz,
-    diurnal_method_reactive = reactive(input$diurnal_method) # e.g., "BT-default"
+    diurnal_method_reactive = reactive(input$diurnal_method), # e.g., "BT-default",
+    skip_invalid = TRUE,
+    notify = TRUE
   )
-
+  
+  
+  mod_inputs_server(
+    id = "inputs",
+    tr = tr,
+    dt_i18n = dt_i18n,
+    raw_data    = prep$raw_uploaded,  # original upload
+    hourly_data = prep$hourly_file   # hourly (converted or passthrough)
+  )
+  
   # Make the LOG tab visible as soon as Prepare produces a data frame
   output$can_show_log <- reactive({
-    !is.null(prep$raw_file)
+    !is.null(prep$hourly_file())
   })
   outputOptions(output, "can_show_log", suspendWhenHidden = FALSE)
 
-  fil <- mod_filter_server("filter", tr, tz, raw_file = up$raw_file, mapping = map)
+  fil <- mod_filter_server(
+    id = "filter", 
+    tr, 
+    tz, 
+    raw_file = up$raw_file, 
+    mapping = map)
 
   run_token <- reactiveVal(0L)
 
 
   # ---- Engine (compute on run_token instead of button directly) ----
+  
   eng <- mod_engine_server(
-    "engine",
-    raw_file = prep$raw_file, # USE PREPARED INPUT (was up$raw_file)
-    mapping = map,
-    tz = tz,
-    filt = fil,
-    init = init,
-    tr = tr,
-    run_click = reactive(run_token()),
+    id         = "engine",
+    raw_hourly = prep$hourly_file,   # <-- hourly (passthrough or converted)
+    daily_src  = prep$src_daily,  # <-- original daily (NULL unless uploaded was daily)
+    mapping    = map,
+    tz         = tz,
+    filt       = fil,
+    init       = init,
+    tr         = tr,            # your translation function
+    run_click  = run_token,
     debounce_ms = 400,
-    cache = "session",
+    cache       = "app",
     enable_cache = TRUE
   )
+  
 
   # ---- Actions (Run button) ----
   acts <- mod_actions_server(

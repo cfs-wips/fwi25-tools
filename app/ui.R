@@ -151,6 +151,27 @@ ui <- fluidPage(
             id = "main_tabs",
             
             tabPanel(
+              title = "Inputs",
+              value = "Inputs",
+              conditionalPanel(
+                condition = "!output.can_show_log",
+                tags$div(
+                  id = "pre-run-card",
+                  class = "gc-card",
+                  tags$p("Upload a CSV.")
+                )
+              ),
+              
+              # Results region (visible after Run)
+              conditionalPanel(
+                condition = "output.can_show_log",
+                tags$div(
+                  id="inputs-wrap",
+                  mod_inputs_ui("inputs")
+                )
+              )
+            ),
+            tabPanel(
               title = textOutput("tab_output_title"),
               value = "Output",
               
