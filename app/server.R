@@ -1,8 +1,6 @@
 options(fwi.debug_times = FALSE)
-# Set a safe default for all bindCache() calls that don't pass cache=
 options(shiny.bindcache.default = "session")
 
-# server.R (modularized)
 library(shiny)
 library(munsell)
 
@@ -20,16 +18,25 @@ server <- function(input, output, session) {
   tr <- i18n$tr
   dt_i18n <- i18n$dt_i18n
   label_for_col <- i18n$label_for_col
-
-  # Tab titles via i18n
+  
+  # Tab titles
   output$tab_output_title <- renderText(tr("tab_output"))
   output$tab_plot_title <- renderText(tr("tab_plot"))
   output$tab_log_title <- renderText(tr("tab_log"))
-
-  # ---- Upload + inputs ----
+  output$tab_inputs_title <- renderText(tr("data_src_inputs"))
+  
+  # Dynamic pre-run messages
+  output$pre_run_output_msg <- output$pre_run_tables_msg <- renderUI({
+    tags$p(tr("hint_upload_and_run"), " ", tags$strong(tr("run_hfwi")), " ", tr("hint_generate_tables"))
+  })
+  
+  output$pre_run_plot_msg <- renderUI({
+    tags$p(tr("hint_upload_to_view"))
+  })
+  
+  # ---- Upload + mapping ----
   up <- mod_upload_server("upload", tr)
   map <- mod_mapping_server("mapping", tr, cols = up$cols, df = up$raw_file)
-
   tz <- mod_timezone_server(
     "tz", tr,
     manual_lat = map$manual_lat,
@@ -37,128 +44,96 @@ server <- function(input, output, session) {
     browser_tz = reactive(input$tz_browser),
     lookup_result = reactive(input$tz_lookup_result)
   )
-
-
   init <- mod_init_server("init", tr)
-
+  
   # ---- Prepare (daily→hourly) ----
   prep <- mod_prepare_server(
     id = "prepare",
     raw_file = up$raw_file,
     mapping = map,
     tz = tz,
-    diurnal_method_reactive = reactive(input$diurnal_method), # e.g., "BT-default",
+    diurnal_method_reactive = reactive(input$diurnal_method),
     skip_invalid = TRUE,
     notify = TRUE
   )
   
-  
+  # Inputs tab
   mod_inputs_server(
     id = "inputs",
     tr = tr,
     dt_i18n = dt_i18n,
-    raw_data    = prep$raw_uploaded,  # original upload
-    hourly_data = prep$hourly_file   # hourly (converted or passthrough)
+    raw_data = prep$raw_uploaded,   # original upload
+    hourly_data = prep$hourly_file  # hourly (converted or passthrough)
   )
   
-  # Make the LOG tab visible as soon as Prepare produces a data frame
-  output$can_show_log <- reactive({
-    !is.null(prep$hourly_file())
-  })
+  # Show/hide Log tab
+  output$can_show_log <- reactive({ !is.null(prep$hourly_file()) })
   outputOptions(output, "can_show_log", suspendWhenHidden = FALSE)
-
-  fil <- mod_filter_server(
-    id = "filter", 
-    tr, 
-    tz, 
-    raw_file = up$raw_file, 
-    mapping = map)
-
-  run_token <- reactiveVal(0L)
-
-
-  # ---- Engine (compute on run_token instead of button directly) ----
   
+  fil <- mod_filter_server("filter", tr, tz, raw_file = up$raw_file, mapping = map)
+  
+  run_token <- reactiveVal(0L)
+  
+  # ---- Engine ----
   eng <- mod_engine_server(
-    id         = "engine",
-    raw_hourly = prep$hourly_file,   # <-- hourly (passthrough or converted)
-    daily_src  = prep$src_daily,  # <-- original daily (NULL unless uploaded was daily)
-    mapping    = map,
-    tz         = tz,
-    filt       = fil,
-    init       = init,
-    tr         = tr,            # your translation function
-    run_click  = run_token,
+    id = "engine",
+    raw_hourly = prep$hourly_file,
+    daily_src = prep$src_daily,
+    mapping = map,
+    tz = tz,
+    filt = fil,
+    init = init,
+    tr = tr,
+    run_click = run_token,
     debounce_ms = 400,
-    cache       = "app",
+    cache = "app",
     enable_cache = TRUE
   )
   
-
-  # ---- Actions (Run button) ----
+  # ---- Actions ----
   acts <- mod_actions_server(
     "actions", tr,
     results = reactive(eng$run_model()),
     csv_name = up$csv_name
   )
-
-
-  # ---- Plot reseed on Plot tab enter (unchanged) ----
+  
+  # ---- Plot reseed ----
   reseed_tick <- reactiveVal(0L)
   bump_reseed <- function() reseed_tick(isolate(reseed_tick()) + 1L)
-  observeEvent(input$main_tabs,
-    {
-      if (identical(input$main_tabs, "Plot")) bump_reseed()
-    },
-    ignoreInit = TRUE
-  )
-
-  # =====================================================================
-  # Show/hide results instantly on Run; reset on new CSV; defer compute
-  # =====================================================================
-
-  # App-level "ran" flag: TRUE only after Run HFWI pressed post-upload
+  observeEvent(input$main_tabs, {
+    if (identical(input$main_tabs, "Plot")) bump_reseed()
+  }, ignoreInit = TRUE)
+  
+  # ---- Results visibility ----
   app_state <- reactiveValues(ran = FALSE)
-
-  # Expose a reactive output for conditionalPanel
-  output$can_show_results <- reactive({
-    isTRUE(app_state$ran)
-  })
+  output$can_show_results <- reactive({ isTRUE(app_state$ran) })
   outputOptions(output, "can_show_results", suspendWhenHidden = FALSE)
-
-  # When a NEW CSV is selected -> reset controls and return to pre-run state
+  
   observeEvent(up$csv_name(), ignoreInit = TRUE, {
     app_state$ran <- FALSE
-    # Reset the <form id="controls"> without shinyjs (native browser reset)
     session$sendCustomMessage("form-reset", "controls")
   })
-
-  # When Run HFWI is clicked:
-  # 1) Flip UI right away via app_state$ran (conditionalPanel reacts)
-  # 2) Defer the heavy compute to after the next UI flush (one-tick yield)
+  
   observeEvent(acts$run(), {
     app_state$ran <- TRUE
-    # Yield to the browser to paint the changes, then trigger compute
     session$onFlushed(function() {
       run_token(isolate(run_token()) + 1L)
     }, once = TRUE)
   })
-
-  # ---- Outputs (modules) ----
+  
+  # ---- Outputs ----
   mod_results_table_server(
     "results_table", tr, dt_i18n,
     results = eng$run_model,
     tz_reactive = tz$tz_use,
     ignore_dst_reactive = tz$tz_offset_policy
   )
-
   mod_fwi87_table_server(
     "fwi87_table", tr, dt_i18n,
     df87 = eng$daily_fwi_df,
     tz_reactive = tz$tz_use,
     ignore_dst_reactive = tz$tz_offset_policy
   )
-
   mod_plot_server(
     "plot", tr, i18n, label_for_col,
     shaped_input = eng$shaped_input_preview,
@@ -166,15 +141,14 @@ server <- function(input, output, session) {
     df87 = eng$daily_fwi_df,
     tz_reactive = tz$tz_use,
     ignore_dst_reactive = tz$tz_offset_policy,
-    tab_active = reactive(input$main_tabs) # NEW
+    tab_active = reactive(input$main_tabs)
   )
-
   mod_log_server(
     "log",
     shaped_input = reactive(eng$shaped_input()),
-    raw_file     = prep$raw_file, # pass prepared so provenance + prep_log are visible
-    df87         = reactive(eng$daily_fwi_df()),
-    init         = init,
-    metrics      = eng$metrics
+    raw_file = prep$prep_meta,
+    df87 = reactive(eng$daily_fwi_df()),
+    init = init,
+    metrics = eng$metrics
   )
 }
