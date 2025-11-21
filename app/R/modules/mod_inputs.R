@@ -1,37 +1,66 @@
+# R/modules/mod_inputs.R
+# Inputs module: shows uploaded raw data and hourly data (converted or passthrough)
+# Adds translations (via tr) and accessibility improvements.
+
 mod_inputs_ui <- function(id) {
   ns <- NS(id)
   tagList(
-    tags$div(class = "gc-card",
-             radioButtons(ns("view_mode"), "View:", choices = c("Raw" = "raw", "Hourly" = "hourly"), inline = TRUE),
-             div(
-               class = "gc-spin-wrap",
-               DT::dataTableOutput(ns("inputs_table")),
-               div(class = "gc-spin-overlay",
-                   div(class = "gc-spinner", `aria-hidden` = "true"),
-                   span(class = "sr-only", "Loading…")
-               )
-             )
+    tags$div(
+      class = "gc-card",
+      # Translated label and choices
+      radioButtons(
+        inputId = ns("view_mode"),
+        label = NULL,  # We'll add aria-label for accessibility
+        choices = c("raw", "hourly"),  # actual values
+        selected = "raw",
+        inline = TRUE
+      ),
+      div(
+        class = "gc-spin-wrap",
+        DT::dataTableOutput(ns("inputs_table")),
+        div(
+          class = "gc-spin-overlay",
+          div(class = "gc-spinner", `aria-hidden` = "true"),
+          span(class = "sr-only", "Loading…")
+        )
+      )
     )
   )
 }
+
 mod_inputs_server <- function(id, tr, dt_i18n, raw_data, hourly_data) {
   moduleServer(id, function(input, output, session) {
+    ns <- session$ns
+    
+    # Update radio button labels dynamically for translations
+    observe({
+      updateRadioButtons(
+        session,
+        "view_mode",
+        label = tr("inputs_view_label"),  # e.g., "View" / "Vue"
+        choices = setNames(c("raw", "hourly"), c(tr("inputs_view_raw"), tr("inputs_view_hourly"))),
+        inline=T
+      )
+    })
+    
+    # Render table based on selected view mode
     output$inputs_table <- DT::renderDataTable({
-      # DataTables callback ensures column widths re-sync after init/draw/resize.
       cb <- DT::JS("
-        var tbl = table;          // DataTables API instance
+        var tbl = table;
         function adjust(){ try { tbl.columns.adjust(); } catch(e){} }
-        setTimeout(adjust, 0);    // after init
+        setTimeout(adjust, 0);
         tbl.on('draw.dt', adjust);
         $(window).on('resize.dt', adjust);
       ")
+      
       if (input$view_mode == "raw") {
-        validate(need(!is.null(raw_data()), "No raw data available"))
-        data<-raw_data()
+        validate(need(!is.null(raw_data()), tr("err_no_raw")))
+        data <- raw_data()
       } else {
-        validate(need(!is.null(hourly_data()), "No hourly data available"))
+        validate(need(!is.null(hourly_data()), tr("err_no_hourly")))
         data <- hourly_data()
       }
+      
       DT::datatable(
         data,
         rownames = FALSE,
