@@ -33,8 +33,7 @@ mod_prepare_server <- function(
       if (!all(c("yr", "mon", "day") %in% names(noon_df))) {
         stop("Missing year/month/day columns for daily conversion.")
       }
-      print(tz_string)
-      tz_off <- if (offset_policy == "std") as.integer(format(as.POSIXlt(Sys.time(), tz = tz_string), "%z")) / 100 else NA_integer_
+      tz_off <- as.integer(format(as.POSIXlt(Sys.time(), tz = tz_string), "%z")) / 100
 
       mm <- try(daily_to_minmax(noon_df[, .(yr, mon, day, temp, rh, ws, prec)]), silent = TRUE)
       if (inherits(mm, "try-error")) stop(paste("daily_to_minmax() failed:", as.character(mm)))
@@ -45,13 +44,13 @@ mod_prepare_server <- function(
       mm$lat <- if ("lat" %in% names(noon_df)) noon_df$lat[1] else NA_real_
       mm$long <- if ("long" %in% names(noon_df)) noon_df$long[1] else NA_real_
 
-      args <- list(mm, timezone = tz_off, skip_invalid = TRUE, verbose = FALSE)
+      args <- list(mm, timezone = tz_off, skip_invalid = TRUE, verbose = FALSE,round_out=NA)
       fml <- try(formalArgs(minmax_to_hourly), silent = TRUE)
       if (!inherits(fml, "try-error")) {
         if ("method" %in% fml) args$method <- diurnal_method
         if ("diurnal" %in% fml) args$diurnal <- diurnal_method
       }
-
+      
       hr <- try(do.call(minmax_to_hourly, args), silent = TRUE)
       if (inherits(hr, "try-error")) stop(paste("minmax_to_hourly() failed:", as.character(hr)))
       hr <- as.data.frame(hr)
@@ -141,8 +140,7 @@ mod_prepare_server <- function(
       offset_policy <- tz$tz_offset_policy()
       dia <- diurnal_method_reactive() %||% "BT-default"
 
-      tz_off <- if (offset_policy == "std") as.integer(format(as.POSIXlt(Sys.time(), tz = tz_string), "%z")) / 100 else NA_integer_
-
+      tz_off <- as.integer(format(as.POSIXlt(Sys.time(), tz = tz_string), "%z")) / 100 
       logs <- character()
       det <- detect_resolution(src, tz_string)
       if (length(det$reasons)) logs <- c(logs, paste0("[Prepare][INFO] Detect reasons: ", paste(det$reasons, collapse = "; ")))
@@ -187,6 +185,7 @@ mod_prepare_server <- function(
         attr(raw_like, "prep_log") <- logs
         raw_like_rv(raw_like)
         meta_rv(list(kind = "daily", converted = TRUE, tz = tz_string, log = logs))
+        emit_toast(sprintf("Converted %s days to %s hourly \n using daily min/max and Beck & Trevitt.",nrow(src),nrow(raw_like)), "message", 5)
         return(invisible())
       }
 
