@@ -52,22 +52,13 @@ server <- function(input, output, session) {
 
   # Make the LOG tab visible as soon as Prepare produces a data frame
   output$can_show_log <- reactive({
-    !is.null(prep$raw_file())
+    !is.null(prep$raw_file)
   })
   outputOptions(output, "can_show_log", suspendWhenHidden = FALSE)
 
   fil <- mod_filter_server("filter", tr, tz, raw_file = up$raw_file, mapping = map)
 
   run_token <- reactiveVal(0L)
-
-
-  observeEvent(up$raw_file(), {
-    cat("[DEBUG] upload nrow:", if (!is.null(up$raw_file())) nrow(up$raw_file()) else NA, "\n")
-  })
-  observeEvent(prep$raw_file(), {
-    cat("[DEBUG] prepare nrow:", if (!is.null(prep$raw_file())) nrow(prep$raw_file()) else NA, "\n")
-    print(prep$prep_meta())
-  })
 
 
   # ---- Engine (compute on run_token instead of button directly) ----
