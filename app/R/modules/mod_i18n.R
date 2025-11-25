@@ -193,7 +193,7 @@ mod_i18n_server <- function(id, session_title = TRUE) {
         modalDialog(
           title = tr("modal_title"),
           HTML(tr("modal_body_html")), # loads external HTML transparently
-          easyClose = TRUE,
+          easyClose = FALSE,
           footer = modalButton(tr("modal_close")),
           size = "l" # actual width/height controlled by CSS in the HTML
         )
