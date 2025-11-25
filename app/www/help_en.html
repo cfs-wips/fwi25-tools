@@ -1,118 +1,247 @@
-<div class="fwi25-help">
-  <style>
-    .modal-lg .modal-dialog { max-width: 1200px; width: 95vw; }
-    .modal-lg .modal-body { max-height: 90vh; overflow-y: auto; }
-    .fwi25-help h2,.fwi25-help h3,.fwi25-help h4{color:#26374A;margin-top:1rem}
-    .fwi25-help p{margin:.5rem 0}
-    .fwi25-help ul{margin:.4rem 0 .6rem 1.2rem}
-    .fwi25-help .muted{color:#43474E}
-    .fwi25-help .note{background:#F1F2F3;padding:.5rem .75rem;border-radius:.35rem}
-    .fwi25-help figure{margin:.5rem 0 1rem}
-    .fwi25-help figcaption{font-size:.9rem;color:#43474E}
-    .fwi25-help .hero{display:flex;justify-content:space-between;gap:.75rem;align-items:center}
-    .fwi25-help .hero .links a{margin-left:.75rem}
-    .fwi25-help code,kbd{background:#f6f6f6;padding:.05rem .3rem;border-radius:.25rem}
-    @media (max-width:700px){.fwi25-help .hero{flex-direction:column;align-items:flex-start}}
-  </style>
+<!DOCTYPE html>
 
-  <div class="hero">
-    <h2 style="margin:0">FWI25 • Canadian Forest Fire Weather Index (hourly)</h2>
-    <div class="links">
-      <a href="https://github.com/cfs-wips/fwi25-tools/issues" target="_blank" rel="noopener noreferrer">Issues ↗</a>
-    </div>
-  </div>
+<html lang="en-CA">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<title>FWI25 • Canadian Forest Fire Weather Index (hourly) — Help</title>
+<link href="gc_custom_style.css" rel="stylesheet"/>
+<style>
+  body { background-color: #f7f9fa; font-family: var(--gcds-font-families-body); }
+  main { max-width: 960px; margin: 0 auto; padding: 1.5rem; }
+  h2 { color: var(--gcds-bg-primary); margin-top: 2rem; font-family: var(--gcds-font-families-heading); }
+  h3 { color: var(--gcds-link-default); margin-top: 1.25rem; }
+  .toc { background: #fff; border: 1px solid var(--gcds-border-default); padding: .75rem 1rem; border-radius: .5rem; }
+  .gc-card { background: #fff; border: 1px solid var(--gcds-border-default); padding: 1rem; border-radius: .5rem; margin-bottom: 1rem; transition: box-shadow 0.3s ease; }
+  .gc-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+  table.coeff { width:100%; border-collapse: collapse; margin-top:.5rem; }
+  table.coeff th, table.coeff td { border:1px solid var(--gcds-border-default); padding:.35rem; text-align:left; }
+  table.coeff th { background: var(--gcds-bg-light); }
+  svg { width: 100%; height: auto; }
+ /* Inline icon + label row */
+  .output-heading {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;                      /* space between icon and text */
+    font-size: 1rem;
+    margin-bottom: 0.35rem;
+  }
+  .output-heading .icon {
+    font-size: 1.2rem;
+    line-height: 1;
+    color: var(--gcds-bg-primary, #26374A);  /* GC primary as fallback */
+  }
+  /* Optional: ensure the paragraph sits nicely below the heading row */
+  .gc-card p {
+    margin-top: 0.25rem;
+    margin-bottom: 0;
+  }
+</style>
+</head>
+<body><header><h1 aria-level="1" class="gc-page-title" role="heading">FWI25 • Canadian Forest Fire Weather Index (hourly)</h1></header><main id="main"><header>
 
-  <p><strong>Purpose.</strong> Compute hourly FWI (FWI25) from your weather data to create operational tables and plots. Upload a CSV, configure options (mapping, timezone/DST, filters, initial codes), then run the model.</p>
-
-  <div class="note"><strong>Copilot & TBS policy.</strong> This app may use Microsoft Copilot to assist with translation and code generation. Use follows the Government of Canada’s
-    <a href="https://www.tbs-sct.canada.ca/pol/doc-eng.aspx?id=32592" target="_blank" rel="noopener noreferrer">Directive on Automated Decision‑Making</a>
-    and the
-    <a href="https://www.canada.ca/en/government/system/digital-government/digital-government-innovations/responsible-use-ai/guide-use-generative-ai.html" target="_blank" rel="noopener noreferrer">Guide on the use of generative AI</a>.
-    All AI‑assisted outputs are reviewed by humans before operational use.
-  </div>
-
-  <h3>What you need (CSV)</h3>
-  <ul>
-    <li><strong>Required columns:</strong> <code>temp</code> (°C), <code>rh</code> (%), <code>wind</code> (km/h), <code>precip</code> (mm).</li>
-    <li><strong>Date/Time:</strong> one <em>Date‑Time</em> column (local or ISO‑8601 with <code>Z</code>/offset) or <em>Year/Month/Day/Hour</em> (0–23).</li>
-    <li><strong>Optional:</strong> station ID, <em>lat/lon</em> (for TZ inference), <code>solrad</code> (passed through when present).</li>
-  </ul>
-
-  <h3>Workflow</h3>
-  <figure>
-    <svg width="100%" height="260" viewBox="0 0 600 260" role="img" aria-label="Vertical workflow (arrows up)">
-      <defs>
-        <style>
-          .bx{fill:#fff;stroke:#7D828B;stroke-width:1.2;rx:10;ry:10}
-          .t{font:600 14px Noto Sans,Arial,sans-serif;fill:#26374A}
-          .s{font:400 12px Noto Sans,Arial,sans-serif;fill:#43474E}
-        </style>
-      </defs>
-      <rect x="185" y="190" width="230" height="50" class="bx"/>
-      <text x="300" y="220" text-anchor="middle" class="t">Tables & Plots (FWI25 / FWI87)</text>
-      <polygon points="300,185 290,170 310,170" fill="#7D828B"/>
-      <rect x="215" y="120" width="170" height="50" class="bx"/>
-      <text x="300" y="150" text-anchor="middle" class="t">Run HFWI</text>
-      <polygon points="300,115 290,100 310,100" fill="#7D828B"/>
-      <rect x="120" y="50" width="360" height="50" class="bx"/>
-      <text x="300" y="72" text-anchor="middle" class="t">Map Columns • TZ/DST • Filters • Initial Codes</text>
-      <text x="300" y="90" text-anchor="middle" class="s">Upload resets inputs • Run required after each upload</text>
-      <polygon points="300,45 290,30 310,30" fill="#7D828B"/>
-      <rect x="230" y="0" width="140" height="40" class="bx"/>
-      <text x="300" y="25" text-anchor="middle" class="t">Upload CSV</text>
-    </svg>
-    <figcaption>Flow is vertical and moves <em>upwards</em>: upload → configure → <strong>Run</strong> → view/download.</figcaption>
-  </figure>
-
-  <h3>Time & DST policy</h3>
-  <p>Choose between <strong>civil time (DST‑aware)</strong> and <strong>fixed standard offset</strong>. This affects the timestamps shown in tables, x‑axis labels, and solar calculations.</p>
-
-  <figure>
-    <svg width="100%" height="220" viewBox="0 0 900 220" role="img" aria-label="DST policy options">
-      <style>.bx{fill:#fff;stroke:#7D828B;stroke-width:1;rx:10;ry:10}.t{font:600 14px Noto Sans,Arial,sans-serif;fill:#26374A}.s{font:400 12px Noto Sans,Arial,sans-serif;fill:#43474E}</style>
-      <rect x="30" y="30" width="390" height="150" class="bx"/>
-      <text x="225" y="55" text-anchor="middle" class="t">Use DST from data (civil)</text>
-      <text x="225" y="85" text-anchor="middle" class="s">Display zone = per‑row Olson tz</text>
-      <text x="225" y="105" text-anchor="middle" class="s">X‑axis & table reflect DST jumps</text>
-      <rect x="480" y="30" width="390" height="150" class="bx"/>
-      <text x="675" y="55" text-anchor="middle" class="t">Ignore DST (standard offset)</text>
-      <text x="675" y="85" text-anchor="middle" class="s">Display zone = fixed Etc/GMT±N</text>
-      <text x="675" y="105" text-anchor="middle" class="s">Uniform hourly spacing year‑round</text>
-    </svg>
-    <figcaption>Pick the policy that matches your operational convention and data collection.</figcaption>
-  </figure>
-
-  <h3>Features</h3>
-  <ul>
-    <li><strong>Column mapping:</strong> Required schema; optional <code>lat/lon</code> for TZ inference and <code>solrad</code>.</li>
-    <li><strong>Timezone:</strong> Auto (infer) or Fixed (select one IANA zone).</li>
-    <li><strong>Filters:</strong> Drop rows prior to a local date to speed up runs/plots.</li>
-    <li><strong>Initial codes:</strong> Set FFMC/DMC/DC starting values.</li>
-    <li><strong>Engine:</strong> Runs hFWI; optional daily FWI87 overlay/summary.</li>
-    <li><strong>Outputs:</strong> FWI25 (hourly), FWI87 (daily), plots (DST‑aware), CSV download.</li>
-    <li><strong>Reset on upload:</strong> New CSV resets inputs & hides prior results until you press <strong>Run HFWI</strong>.</li>
-  </ul>
-
-  <h3>Common pitfalls</h3>
-  <ul>
-    <li>Units mismatch (°F, mph, inches) — verify: °C, %, km/h, mm.</li>
-    <li>Duplicate timestamps or gaps — fix in source CSV.</li>
-    <li>Mixed/ambiguous time zones — prefer ISO‑8601 with explicit offset.</li>
-    <li>Large files — pre‑filter by date range.</li>
-  </ul>
-
-  <h3>Known limitations</h3>
-  <ul>
-    <li>Assumes hourly weather; sub‑hourly data are aggregated/ignored upstream.</li>
-    <li>Solar terms depend on TZ/DST policy and lat/lon quality.</li>
-    <li>Plots are summaries; verify outputs before external distribution.</li>
-  </ul>
-
-  <h3>Privacy & security</h3>
-  <p>Uploaded files stay within the session. Avoid personal or sensitive data. See departmental guidance for records management and retention.</p>
-
-  <h3>Support</h3>
-  <p>Questions or bugs? Open an issue:
-    <a href="https://github.com/cfs-wips/fwi25-tools/issues" target="_blank" rel="noopener noreferrer">cfs‑wips/fwi25‑tools · Issues</a>.
-  </p>
+<p class="muted">Help &amp; user guide — compute hourly FWI (FWI25) from your weather data</p>
+</header><main>
+<nav aria-label="Table of contents" class="toc">
+<strong>On this page</strong>
+<ol>
+<li><a href="#overview">Overview, purpose &amp; assumptions</a></li>
+<li><a href="#workflow">Workflow: steps &amp; outputs</a></li>
+<li><a href="#process">Process</a></li>
+<li><a href="#models">Modelling details &amp; assumptions</a></li>
+<li><a href="#diagram">Process Diagram</a></li>
+<li><a href="#policy">TBS &amp; Copilot statement</a></li>
+<li><a href="#support">Support &amp; links</a></li>
+<li><a href="#references">References</a></li>
+</ol>
+</nav>
+<section id="overview">
+<h2 aria-level="2" role="heading">1) Overview, purpose &amp; assumptions</h2>
+<div class="gc-card">
+<p><strong>FWI25</strong> converts your weather data into <em>hourly</em> Canadian Forest Fire Weather Index values to support operational tables, plots, and downstream analytics. Upload a CSV, configure options, and run the hourly engine; the app returns FWI25 outputs and (optionally) daily FWI87 summaries.</p>
+<h3 aria-level="3" role="heading">What the app can and cannot do</h3>
+<ul>
+<li>Accepts either <strong>hourly</strong> weather or <strong>daily (noon/1200)</strong> weather. If you provide daily, we statistically derive min/max values and then synthesize an hourly series before computing FWI25.</li>
+<li>Respects your <strong>time policy</strong>: civil (DST-aware) vs a fixed standard offset; this affects timestamps shown in tables, plot axes, and solar terms.</li>
+<li>Provides mapping, timezone/DST options, filters, and initial codes; previous results are hidden until you press <em>Run HFWI</em> after each upload.</li>
+</ul>
+<h3 aria-level="3" role="heading">Limitations</h3>
+<ul>
+<li>Assumes hourly granularity once converted; sub-hourly inputs are aggregated/ignored upstream.</li>
+<li>Solar calculations depend on latitude/longitude quality and your chosen time policy (DST vs standard).</li>
+</ul>
 </div>
+</section>
+<section id="workflow">
+<h2 aria-level="2" role="heading">2) Workflow: steps &amp; outputs</h2>
+<h3 aria-level="3" role="heading">Steps</h3>
+<div class="grid">
+<div class="gc-card"><h3 aria-level="3" role="heading">Upload &amp; Map</h3><p>Upload a CSV and map required fields. Optional: station ID and lat/lon for timezone inference.</p></div>
+<div class="gc-card"><h3 aria-level="3" role="heading">Options</h3><p>Select timezone/DST policy, apply filters, and set initial codes.</p></div>
+<div class="gc-card"><h3 aria-level="3" role="heading">Run HFWI</h3><p>Press <em>Run HFWI</em> to compute hourly FWI25. New uploads reset prior results.</p></div>
+</div>
+<h3 aria-level="3" role="heading">Outputs</h3>
+<div class="grid">
+<div class="gc-card">
+<div class="output-heading">
+<span aria-hidden="true" class="icon"><span aria-label="Input Table" role="img">📥</span></span>
+<strong>Input Table</strong>
+<span aria-hidden="true" class="icon"><span aria-label="Input Table" role="img">📥</span></span>
+</div>
+<p>Shows mapped weather data.</p>
+</div>
+<div class="gc-card">
+<div class="output-heading">
+<span aria-hidden="true" class="icon"><span aria-label="Data Table" role="img">📊</span></span>
+<strong>Output Table</strong>
+<span aria-hidden="true" class="icon"><span aria-label="Data Table" role="img">📊</span></span>
+</div>
+<p>Hourly FWI25 values and optional daily FWI87 summary.</p>
+</div>
+<div class="gc-card">
+<div class="output-heading">
+<span aria-hidden="true" class="icon"><span aria-label="Chart" role="img">📈</span></span>
+<strong>Plots</strong>
+<span aria-hidden="true" class="icon"><span aria-label="Chart" role="img">📈</span></span>
+</div>
+<p>Visualize hourly codes and indices.</p>
+</div>
+<div class="gc-card">
+<div class="output-heading">
+<span aria-hidden="true" class="icon">📝</span>
+<strong>Logs</strong>
+<span aria-hidden="true" class="icon">📝</span>
+</div>
+<p>Process messages and any warnings.</p>
+</div>
+</div>
+</section>
+<section id="process">
+<h2 aria-level="2" role="heading">3) Process: upload → map → options → run → results</h2>
+<div class="gc-card">
+<p><strong>Two paths:</strong> Hourly input computes FWI25 directly. Daily input estimates min/max values, then synthesizes hourly series via Becks &amp; Trevitt before computing FWI25.</p>
+</div>
+</section>
+<section id="models">
+<h2 aria-level="2" role="heading">4) Daily→hourly modelling details &amp; assumptions</h2>
+<div class="gc-card">
+<h3 aria-level="3" role="heading">4.1 Daily → Min/Max (statistical model)</h3>
+<p>When provided only with daily noon values (<code>temp</code>, <code>rh</code>, <code>ws</code>, <code>prec</code>), we compute a temperature range <code>temp_range = 17 − 0.16·RH_noon + 0.22·T_noon</code>. The daily maxima/minima are then: <code>T_max = T_noon + {1 if temp_range ≤ 2 else 2}</code>, and <code>T_min = (T_noon − 1) if temp_range ≤ 2 else (T_max − temp_range)</code>.</p>
+<p>Relative humidity extrema are paired so that minimum RH coincides with maximum temperature and vice‑versa, using a parameter <code>q</code> derived from noon conditions and a function <code>find_rh(q, T)</code>, bounded to 0–100%. Wind extrema are estimated as <code>WS_min = 0.15·WS_noon</code> and <code>WS_max = 1.25·WS_noon</code>.</p>
+<p class="muted small">Note: <code>find_q</code> and <code>find_rh</code> are implemented in the app’s utility code; they relate noon conditions to the diurnal humidity curve.</p>
+<h3 aria-level="3" role="heading">4.2 Min/Max → Hourly (Becks &amp; Trevitt synthesis)</h3>
+<p>The hourly profiles of temperature, wind, and humidity are generated using a two‑phase curve per day: a <em>rising</em> phase from shortly after sunrise to near solar noon, followed by a <em>falling</em> phase from sunset toward the next day’s minimum.</p>
+<ul>
+<li><strong>Solar timing:</strong> Solar noon is set as the midpoint between sunrise and sunset per day; sunrise and sunset come from the app’s solar routine.</li>
+<li><strong>Coefficients (default):</strong>
+<ul>
+<li>Temperature: α = 0.0, β = 2.75, γ = −1.9</li>
+<li>Relative humidity (opposite form): α = 0.25, β = 2.75, γ = −2.0</li>
+<li>Wind: α = 1.0, β = 1.5, γ = −1.3</li>
+</ul>
+</li>
+<li><strong>Rising phase (daytime):</strong> values progress from min toward max using a sine half‑wave scaled between <code>TIME_MIN = SUNRISE + α</code> and <code>TIME_MAX = SOLARNOON + β</code>.</li>
+<li><strong>Falling phase (evening–night):</strong> values decay exponentially from the value at <code>change_at = SUNSET</code> toward the next day’s minimum using γ.</li>
+<li><strong>Humidity form:</strong> the model operates on <code>RH_OPP = 1 − RH_fraction</code>, then converts back to percent RH (0–100%).</li>
+<li><strong>Precipitation allocation:</strong> daily precipitation is placed at <code>07:00</code> local time by default.</li>
+<li><strong>Timezone policy:</strong> timestamps use your selected civil/DST or fixed standard offset policy; plotting and tables reflect that choice.</li>
+</ul>
+</div>
+</section>
+<section id="diagram">
+<h2 aria-level="2" role="heading">5) Process flow (vertical diagram)</h2>
+<figure>
+<svg aria-labelledby="title desc" role="img" viewbox="0 0 600 800">
+<title id="title">FWI25 process flow</title>
+<desc id="desc">Vertical branched flow showing hourly and daily paths merging before results, with optional FWI87 calculation.</desc>
+<style><![CDATA[
+  .box { fill:#fff; stroke:#7D828B; stroke-width:1.5; rx:6; }
+  .hourly { fill:#e6f4ea; }
+  .daily { fill:#eaf0f8; }
+  .merge { fill:#f9f9f9; }
+  .optional { fill:#f0f0f0; stroke-dasharray:4; }
+  .label { font:14px sans-serif; fill:#333; }
+  .arrow { stroke:#333; stroke-width:1.5; marker-end:url(#arrowhead); }
+]]></style>
+<defs>
+<marker id="arrowhead" markerheight="8" markerunits="strokeWidth" markerwidth="8" orient="auto" refx="8" refy="5" viewbox="0 0 10 10">
+<path d="M0,0 L10,5 L0,10 Z" fill="#333"></path>
+</marker>
+</defs>
+<!-- Legend -->
+<rect class="hourly" height="20" stroke="#7D828B" width="20" x="20" y="10"></rect><text class="label" x="50" y="25">Hourly path</text>
+<rect class="daily" height="20" stroke="#7D828B" width="20" x="180" y="10"></rect><text class="label" x="210" y="25">Daily path</text>
+<rect class="merge" height="20" stroke="#7D828B" width="20" x="340" y="10"></rect><text class="label" x="370" y="25">Merge</text>
+<rect class="optional" height="20" stroke="#7D828B" width="20" x="480" y="10"></rect><text class="label" x="510" y="25">Optional</text>
+<!-- Flow -->
+<!-- Upload -->
+<rect class="box merge" height="50" width="200" x="200" y="60"><title>Upload your CSV file</title></rect>
+<text class="label" x="220" y="90">Upload CSV</text>
+<line class="arrow" x1="300" x2="300" y1="110" y2="160"></line>
+<!-- Map & Options -->
+<rect class="box merge" height="50" width="200" x="200" y="160"><title>Map columns and set options</title></rect>
+<text class="label" x="210" y="190">Map Columns &amp; Options</text>
+<line class="arrow" x1="300" x2="300" y1="210" y2="260"></line>
+<!-- Branch -->
+<line class="arrow" x1="300" x2="150" y1="260" y2="320"></line>
+<line class="arrow" x1="300" x2="450" y1="260" y2="320"></line>
+<!-- Hourly path -->
+<rect class="box hourly" height="50" width="150" x="100" y="320"><title>Hourly weather input</title></rect>
+<text class="label" x="110" y="350">Hourly weather</text>
+<line class="arrow" x1="175" x2="300" y1="370" y2="620"></line>
+<!-- Daily path -->
+<rect class="box daily" height="50" width="150" x="400" y="320"><title>Daily weather input</title></rect>
+<text class="label" x="410" y="350">Daily weather</text>
+<line class="arrow" x1="475" x2="475" y1="370" y2="420"></line>
+<rect class="box daily" height="50" width="150" x="400" y="420"><title>Convert daily to min/max</title></rect>
+<text class="label" x="410" y="450">Statistical min/max</text>
+<line class="arrow" x1="475" x2="475" y1="470" y2="520"></line>
+<rect class="box daily" height="50" width="150" x="400" y="520"><title>Synthesize hourly using Becks &amp; Trevitt</title></rect>
+<text class="label" x="410" y="550">Becks &amp; Trevitt hourly</text>
+<line class="arrow" x1="475" x2="300" y1="570" y2="620"></line>
+<!-- Merge -->
+<rect class="box merge" height="50" width="200" x="200" y="620"><title>Run the hourly FWI engine</title></rect>
+<text class="label" x="220" y="650">Run HFWI</text>
+<!-- Optional FWI87 -->
+<rect class="box optional" height="50" width="180" x="420" y="620"><title>Compute daily FWI87 summary</title></rect>
+<text class="label" x="430" y="650">Optional: Calculate FWI87</text>
+<line class="arrow" x1="420" x2="400" y1="645" y2="645"></line>
+<!-- Results -->
+<line class="arrow" x1="300" x2="300" y1="670" y2="720"></line>
+<rect class="box merge" height="50" width="200" x="200" y="720"><title>View results: tables, plots, logs</title></rect>
+<text class="label" x="220" y="750">Results</text>
+</svg>
+</figure>
+</section>
+<section id="policy">
+<h2 aria-level="2" role="heading">6) TBS &amp; Copilot statement</h2>
+<div class="gc-card">
+<p>This app may use Microsoft Copilot to assist with translation and code generation. 
+Use follows the Government of Canada’s <a href="https://www.tbs-sct.canada.ca/pol/doc-eng.aspx?id=32592">
+Directive on Automated Decision‑Making</a> and the <a href="https://www.canada.ca/en/government/system/digital-government/digital-government-innovations/responsible-use-ai/guide-use-generative-ai.html" target="_blank">Guide on the use of Generative AI</a>. 
+All AI‑assisted outputs are reviewed by humans before operational use.</p>
+</div>
+</section>
+<section id="support">
+<h2 aria-level="2" role="heading">7) Support &amp; links</h2>
+<p>
+<ul>
+<li><a href="https://github.com/cfs-wips/fwi25-tools/issues" target="_blank">Report issues </a><br/></li>
+<li><a href="https://github.com/nrcan-cfs-fire/cffdrs-ng/" target="_blank">CFFDRS ng repo </a><br/></li>
+<li><a href="https://cffdrs.github.io/website_en/" target="_blank">NG CFFDRS FWI25 website</a><br/></li>
+</ul>
+</p>
+</section>
+
+<section id="references">
+<h2 aria-level="2" role="heading">8) Références</h2>
+<ul>
+<li>https://doi.org/10.1139/x89-120Beck, T.A., &amp; Trevitt, A.C. (1989). Modélisation de la variation diurne des variables météorologiques pour l’évaluation du danger d’incendie. <em>Revue canadienne de recherche forestière</em>.</a></li>
+<li>https://doi.org/10.4095/st000101Groupe de travail sur les dangers d’incendies du Service canadien des forêts (2025). Mise à jour 2025 du système FWI : structure, changements et interprétation. Rapport d’information (GLFC - Sault Ste. Marie), GLC-X-42, 59. Ressources naturelles Canada.</a></li>
+</ul>
+</section>
+</main>
+</body>
+</html>
+

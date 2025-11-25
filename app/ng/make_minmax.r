@@ -81,8 +81,11 @@ if ("--args" %in% commandArgs() && sys.nframe() == 0) {
   }
   input <- args[1]
   output <- args[2]
-  if (length(args) >= 3) round_out <- args[3]
-  else round_out <- 4
+  if (length(args) >= 3) {
+    round_out <- args[3]
+  } else {
+    round_out <- 4
+  }
   if (length(args) >= 4) warning("Too many input arguments provided, some unused")
 
   df_in <- read.csv(input)

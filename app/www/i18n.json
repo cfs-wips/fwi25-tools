@@ -6,10 +6,15 @@
     "csv_has_header": "CSV has header",
     "csv_button_label": "Browse...",
     "csv_place_holder": "No file selected",
-
+    "inputs_view_label": "View",
+    "inputs_view_raw": "Raw",
+    "inputs_view_hourly": "Hourly",
+    "err_no_raw": "No raw data available",
     "lat_label": "Latitude (°)",
     "lon_label": "Longitude (°)",
-
+    "hint_upload_to_view": "Upload a CSV to view.",
+    "hint_upload_and_run": "Upload a CSV and click",
+    "hint_generate_tables": "to generate tables.",
     "column_mapping": "Column mapping",
     "mapping_help": "Map your columns to what NG–CFFDRS expects. Provide either a single Date–Time column, or Year/Month/Day/Hour.",
     "col_datetime": "Date–Time (optional)",
@@ -194,7 +199,11 @@
     "csv_has_header": "Le CSV comporte une ligne d’en‑tête",
     "csv_button_label": "Parcourir...",
     "csv_place_holder": "Aucun fichier sélectionné",
-
+    "inputs_view_label": "Vue",
+    "inputs_view_raw": "Brut",
+    "inputs_view_hourly": "Horaire",
+    "err_no_raw": "Aucune donnée brute disponible",
+    "err_no_hourly": "Aucune donnée horaire disponible",
     "lat_label": "Latitude (°)",
     "lon_label": "Longitude (°)",
 
@@ -215,7 +224,9 @@
     "col_date": "Colonne de date (Optionnel)",
     "col_time": "Colonne d’heure (Optionnel)",
     "col_solrad": "Rayonnement solaire (Optionnel)",
-
+    "hint_upload_to_view": "Téléversez un CSV pour afficher.",
+    "hint_upload_and_run": "Téléversez un CSV et cliquez sur",
+    "hint_generate_tables": "pour générer les tableaux.",
     "tt_col_datetime": "Une seule date‑heure locale ou ISO‑8601 avec « Z »/décalage UTC. Si une zone/décalage explicite est présent, il sera respecté.",
     "tt_col_id": "Identifiant de station (converti en texte).",
     "tt_col_year": "Année (ex. 2025). À utiliser si aucune colonne Date‑heure unique.",
@@ -337,7 +348,7 @@
     "dt_pag_prev": "Précédent",
     "dt_pag_next": "Suivant",
     "dt_pag_last": "Dernier",
-
+    
     "aliases_short": {
       "ffmc": "FFMC",
       "dmc": "DMC",

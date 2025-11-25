@@ -7,8 +7,10 @@ C_TEMP <- list(c_alpha = 0.0, c_beta = 2.75, c_gamma = -1.9)
 C_RH <- list(c_alpha = 0.25, c_beta = 2.75, c_gamma = -2.0)
 C_WIND <- list(c_alpha = 1.0, c_beta = 1.5, c_gamma = -1.3)
 
-make_prediction <- function(fcsts, c_alpha, c_beta, c_gamma, v = "TEMP", change_at = "SUNSET",
-  min_value = -Inf, max_value = Inf, intervals = 1, verbose = FALSE) {
+make_prediction <- function(
+  fcsts, c_alpha, c_beta, c_gamma, v = "TEMP", change_at = "SUNSET",
+  min_value = -Inf, max_value = Inf, intervals = 1, verbose = FALSE
+) {
   if (verbose) {
     print(paste0("Predicting ", v, " changing at ", change_at))
   }
@@ -26,7 +28,8 @@ make_prediction <- function(fcsts, c_alpha, c_beta, c_gamma, v = "TEMP", change_
   stopifnot(1 == nrow(unique(fcsts$ID)))
   hours <- data.table(HR = 0:23)
   cross <- as.data.table(merge(as.data.frame(hours), as.data.frame(fcsts[, c("DATE")]),
-    all = TRUE))
+    all = TRUE
+  ))
   minutes <- data.table(MINUTE = seq(0, 59, by = 60 / intervals))
   cross <- as.data.table(merge(as.data.frame(cross), as.data.frame(minutes), all = TRUE))
   cross[, ID := unique(fcsts$ID)]
@@ -75,14 +78,20 @@ do_prediction <- function(fcsts, row_temp, row_wind, row_RH, intervals = 1, verb
     print("Doing prediction")
   }
   v_temp <- make_prediction(fcsts, row_temp$c_alpha, row_temp$c_beta, row_temp$c_gamma,
-    "TEMP", "SUNSET", intervals = intervals, verbose = verbose)
+    "TEMP", "SUNSET",
+    intervals = intervals, verbose = verbose
+  )
   v_wind <- make_prediction(fcsts, row_wind$c_alpha, row_wind$c_beta, row_wind$c_gamma,
-    "WS", "SUNSET", min_value = 0, intervals = intervals, verbose = verbose)
+    "WS", "SUNSET",
+    min_value = 0, intervals = intervals, verbose = verbose
+  )
   t <- v_temp[, c("ID", "TIMESTAMP", "DATE", "HR", "LAT", "LONG", "TIMEZONE", "TEMP")]
   w <- v_wind[, c("ID", "TIMESTAMP", "DATE", "HR", "WS")]
   out <- merge(t, w)
   RH <- make_prediction(fcsts, row_RH$c_alpha, row_RH$c_beta, row_RH$c_gamma,
-    "RH_OPP", intervals = intervals, min_value = 0, max_value = 1, verbose = verbose)
+    "RH_OPP",
+    intervals = intervals, min_value = 0, max_value = 1, verbose = verbose
+  )
   RH[, `:=`(RH = 100 * (1 - RH_OPP))]
   RH <- RH[, c("ID", "TIMESTAMP", "RH")]
   out <- merge(RH, out, by = c("ID", "TIMESTAMP"))
@@ -153,10 +162,12 @@ minmax_to_hourly_single <- function(w, skip_invalid = FALSE, verbose = FALSE) {
   r$HR <- 12
   # as_datetime() defaults to UTC, but we only use TIMESTAMP for it's combined yr, mon, day, hr
   r[, TIMESTAMP := as_datetime(sprintf("%04d-%02d-%02d %02d:00:00", YR, MON, DAY, HR))]
-  if (!(nrow(r) == 1 || is_sequential(as.Date(r$TIMESTAMP)))) {
+  if (!(nrow(r) == 1 || is_sequential(as.Date(r$TIMESTAMP), "days"))) { # UPDATED
     if (skip_invalid) {
-      warning(paste0(r$ID[[1]], " for ", r$YR[[1]],
-        " - Expected input to be sequential daily weather"))
+      warning(paste0(
+        r$ID[[1]], " for ", r$YR[[1]],
+        " - Expected input to be sequential daily weather"
+      ))
       return(NULL)
     }
     stop("Expected input to be sequential daily weather")
@@ -174,7 +185,7 @@ minmax_to_hourly_single <- function(w, skip_invalid = FALSE, verbose = FALSE) {
   r[, DAY := day(TIMESTAMP)]
   r[, HR := hour(TIMESTAMP)]
   r <- get_sunlight(r, get_solrad = FALSE)
-  colnames(r) <- toupper(colnames(r))  # get_sunlight outputs lowercase columns
+  colnames(r) <- toupper(colnames(r)) # get_sunlight outputs lowercase columns
   # FIX: is solar noon just midpoint between sunrise and sunset?
   r[, SOLARNOON := (SUNSET - SUNRISE) / 2 + SUNRISE]
   r[, RH_OPP_MIN := 1 - RH_MAX / 100]
@@ -202,8 +213,10 @@ minmax_to_hourly_single <- function(w, skip_invalid = FALSE, verbose = FALSE) {
 #' @param   round_out   decimals to truncate output to, NA for none (default 4)
 #' @return              hourly values weather stream [lat, long, timezone, yr, mon, day, hr, temp, rh, ws, prec]
 #' @export minmax_to_hourly
-minmax_to_hourly <- function(w, timezone = NA, skip_invalid = FALSE,
-  verbose = FALSE, round_out = 4) {
+minmax_to_hourly <- function(
+  w, timezone = NA, skip_invalid = FALSE,
+  verbose = FALSE, round_out = 4
+) {
   # check df_wx class for data.frame or data.table
   wasDT <- is.data.table(w)
   if (wasDT) {
@@ -217,8 +230,10 @@ minmax_to_hourly <- function(w, timezone = NA, skip_invalid = FALSE,
 
   # check for required columns
   colnames(r) <- toupper(colnames(r))
-  req_cols <- c("LAT", "LONG", "YR", "MON", "DAY", "TEMP_MIN", "TEMP_MAX",
-                "RH_MIN", "RH_MAX", "WS_MIN", "WS_MAX", "PREC")
+  req_cols <- c(
+    "LAT", "LONG", "YR", "MON", "DAY", "TEMP_MIN", "TEMP_MAX",
+    "RH_MIN", "RH_MAX", "WS_MIN", "WS_MAX", "PREC"
+  )
   for (col in req_cols) {
     if (!col %in% names(r)) {
       stop(paste("Missing required input column:", col))
@@ -277,14 +292,26 @@ if ("--args" %in% commandArgs() && sys.nframe() == 0) {
   input <- args[1]
   output <- args[2]
   # load optional arguments if provided, or set to default
-  if (length(args) >= 3) timezone <- as.numeric(args[3])
-  else timezone <- NA
-  if (length(args) >= 4) skip_invalid <- as.numeric(args[3])
-  else skip_invalid <- FALSE
-  if (length(args) >= 5) verbose <- as.logical(args[4])
-  else verbose <- FALSE
-  if (length(args) >= 6) round_out <- args[5]
-  else round_out <- 4
+  if (length(args) >= 3) {
+    timezone <- as.numeric(args[3])
+  } else {
+    timezone <- NA
+  }
+  if (length(args) >= 4) {
+    skip_invalid <- as.numeric(args[3])
+  } else {
+    skip_invalid <- FALSE
+  }
+  if (length(args) >= 5) {
+    verbose <- as.logical(args[4])
+  } else {
+    verbose <- FALSE
+  }
+  if (length(args) >= 6) {
+    round_out <- args[5]
+  } else {
+    round_out <- 4
+  }
   if (length(args) >= 7) warning("Too many input arguments provided, some unused")
 
   df_in <- read.csv(input)
