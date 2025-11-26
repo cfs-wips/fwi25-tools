@@ -1,5 +1,5 @@
 options(fwi.debug_times = FALSE)
-options(shiny.bindcache.default = "session")
+options(shiny.bindcache.default = "app")
 reactlog::reactlog_enable()
 library(shiny)
 library(munsell)
@@ -39,16 +39,16 @@ server <- function(input, output, session) {
   })
 
   # ---- Upload + mapping ----
-  up <- mod_upload_server("upload", tr)
-  map <- mod_mapping_server("mapping", tr, cols = up$cols, df = up$raw_file)
+  up <- mod_upload_server("upload", isolate(tr))
+  map <- mod_mapping_server("mapping", isolate(tr), cols = up$cols, df = up$raw_file)
   tz <- mod_timezone_server(
-    "tz", tr,
+    "tz", isolate(tr),
     manual_lat = map$manual_lat,
     manual_lon = map$manual_lon,
     browser_tz = reactive(input$tz_browser),
     lookup_result = reactive(input$tz_lookup_result)
   )
-  init <- mod_init_server("init", tr)
+  init <- mod_init_server("init", isolate(tr))
 
   # ---- Prepare (daily→hourly) ----
   prep <- mod_prepare_server(
@@ -64,7 +64,7 @@ server <- function(input, output, session) {
   # Inputs tab
   mod_inputs_server(
     id = "inputs",
-    tr = tr,
+    tr = isolate(tr),
     dt_i18n = dt_i18n,
     raw_data = prep$raw_uploaded, # original upload
     hourly_data = prep$hourly_file # hourly (converted or passthrough)
@@ -76,7 +76,7 @@ server <- function(input, output, session) {
   })
   outputOptions(output, "can_show_log", suspendWhenHidden = FALSE)
 
-  fil <- mod_filter_server("filter", tr, tz, raw_file = up$raw_file, mapping = map)
+  fil <- mod_filter_server("filter", isolate(tr), tz, raw_file = up$raw_file, mapping = map)
 
   run_token <- reactiveVal(0L)
 
@@ -89,7 +89,7 @@ server <- function(input, output, session) {
     tz = tz,
     filt = fil,
     init = init,
-    tr = tr,
+    tr = isolate(tr),
     run_click = debounce(run_token, 400),
     cache = "app",
     enable_cache = TRUE
@@ -97,7 +97,7 @@ server <- function(input, output, session) {
 
   # ---- Actions ----
   acts <- mod_actions_server(
-    "actions", tr,
+    "actions", isolate(tr),
     results = reactive(eng$run_model()),
     csv_name = up$csv_name
   )
@@ -133,19 +133,19 @@ server <- function(input, output, session) {
 
   # ---- Outputs ----
   mod_results_table_server(
-    "results_table", tr, dt_i18n,
+    "results_table", isolate(tr), dt_i18n,
     results = eng$run_model,
     tz_reactive = tz$tz_use,
     ignore_dst_reactive = tz$tz_offset_policy
   )
   mod_fwi87_table_server(
-    "fwi87_table", tr, dt_i18n,
+    "fwi87_table", isolate(tr), dt_i18n,
     df87 = eng$daily_fwi_df,
     tz_reactive = tz$tz_use,
     ignore_dst_reactive = tz$tz_offset_policy
   )
   mod_plot_server(
-    "plot", tr, i18n, label_for_col,
+    "plot", isolate(tr), i18n, label_for_col,
     shaped_input = eng$shaped_input_preview,
     results = eng$run_model,
     df87 = eng$daily_fwi_df,
@@ -153,6 +153,7 @@ server <- function(input, output, session) {
     ignore_dst_reactive = tz$tz_offset_policy,
     tab_active = reactive(input$main_tabs)
   )
+
   mod_log_server(
     "log",
     shaped_input = reactive(eng$shaped_input()),

@@ -32,9 +32,10 @@ mod_fwi87_table_ui <- function(id) {
         div(
           class = "gc-spin-wrap",
           DT::DTOutput(ns("tbl"), width = "100%"),
-          div(class = "gc-spin-overlay",
-              div(class = "gc-spinner", `aria-hidden` = "true"),
-              span(class = "sr-only", "Loading…")
+          div(
+            class = "gc-spin-overlay",
+            div(class = "gc-spinner", `aria-hidden` = "true"),
+            span(class = "sr-only", "Loading…")
           )
         )
       )
@@ -257,7 +258,7 @@ mod_fwi87_table_server <- function(id, tr, dt_i18n, df87, tz_reactive,
       )
 
       out
-    })
+    }) |> bindCache(df87(), tz_reactive(), ignore_dst_reactive())
 
     # ---- Render DT
     output$tbl <- DT::renderDT(
@@ -290,7 +291,6 @@ mod_fwi87_table_server <- function(id, tr, dt_i18n, df87, tz_reactive,
         )
       },
       server = TRUE
-      
     )
     outputOptions(output, "tbl", suspendWhenHidden = FALSE)
   })

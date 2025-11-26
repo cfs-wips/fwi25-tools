@@ -34,6 +34,40 @@ mod_engine_server <- function(
     source("ng/util_vectorized.r", local = TRUE)
     source("ng/NG_FWI_vectorized.r", local = TRUE)
 
+
+    session$onFlushed(function() {
+      # compiler::enableJIT(3)
+      # Warm-start daily FWI path with a synthetic 1-row dataset
+      try(
+        {
+          stub <- data.frame(
+            yr = 2001, mon = 1, day = 1,
+            temp = 15, rh = 45, ws = 10, prec = 0,
+            lat = 55, long = -115, id = "stub"
+          )
+          # Call cffdrs::fwi directly (same as daily_fwi_core does)
+          invisible(cffdrs::fwi(
+            input = stub,
+            init = data.frame(ffmc = 85, dmc = 6, dc = 15, lat = 55),
+            batch = TRUE, out = "all", lat.adjust = TRUE, uppercase = FALSE
+          ))
+        },
+        silent = TRUE
+      )
+
+      try(
+        {
+          stub_hourly <- data.frame(
+            datetime = as.POSIXct("2001-01-01 12:00:00", tz = "UTC"),
+            temp = 15, rh = 45, ws = 10, prec = 0, lat = 55, long = -115
+          )
+          invisible(hFWI(stub_hourly, timezone = 0, ffmc_old = 85, dmc_old = 6, dc_old = 15, silent = TRUE))
+        },
+        silent = TRUE
+      )
+    }, once = TRUE)
+
+
     `%||%` <- function(x, y) if (is.null(x) || length(x) == 0) y else x
 
     # ---- Rounding policy ----
@@ -60,7 +94,7 @@ mod_engine_server <- function(
       m <- regexpr("(?<=\\.)\\d+", s, perl = TRUE)
       ifelse(m > 0, attr(m, "match.length"), 0L)
     })
-
+    # memo_count_decimals <- compiler::cmpfun(memo_count_decimals)
     memo_round_vec <- memoise::memoise(function(x, digits) {
       if (!is.numeric(x)) {
         return(x)
@@ -98,7 +132,7 @@ mod_engine_server <- function(
       }
       dt
     }
-
+    # round_by_spec_dt <- compiler::cmpfun(round_by_spec_dt)
     # ---- Column helpers ----
     get_col <- function(df, nm) if (shiny::isTruthy(nm) && nzchar(nm) && nm %in% names(df)) df[[nm]] else NULL
 
@@ -132,7 +166,7 @@ mod_engine_server <- function(
         "%Y-%m-%d %I:%M %p", "%m/%d/%Y %I:%M %p", "%d/%m/%Y %I:%M %p"
       )))
     })
-
+    # parse_dt_base <- compiler::cmpfun(parse_dt_base)
     parse_dt_utc_then_local <- memoise::memoise(function(x, tz_out) {
       x <- as.character(x)
       dt_utc <- suppressWarnings(as.POSIXct(x, tz = "UTC", tryFormats = c(
@@ -151,7 +185,7 @@ mod_engine_server <- function(
         as.POSIXct(ch, tz = tz_out)
       }
     })
-
+    # parse_dt_utc_then_local <- compiler::cmpfun(parse_dt_utc_then_local)
 
     parse_z_to_hours <- function(zstr) {
       zstr <- gsub(":", "", zstr %||% "")
@@ -167,19 +201,32 @@ mod_engine_server <- function(
 
     fast_fingerprint <- function(wx) {
       if (is.null(wx) || nrow(wx) == 0) {
-        return(list(n = 0))
+        return(list(n = 0L))
       }
-      rng <- range(wx$datetime)
+      # Ensure types are stable
+      dt <- as.POSIXct(wx$datetime, tz = attr(wx$datetime, "tzone") %||% "UTC")
+      lat1 <- suppressWarnings(as.numeric(wx$lat[1]))
+      lon1 <- suppressWarnings(as.numeric(wx$long[1]))
+
+      # Deterministic range rounded to seconds to avoid floating subtleties
+      rng <- range(dt)
+      t0 <- as.integer(round(as.numeric(rng[1]), 0))
+      t1 <- as.integer(round(as.numeric(rng[2]), 0))
+
+      # Avoid sumT/sumR if upstream rounding or NA handling can differ
+      # If you want a content hash, use a robust approach:
+      #   h <- digest::digest(list(n=nrow(wx), t0=t0, t1=t1, lat=lat1, lon=lon1), algo="xxhash64")
+
       list(
-        n = nrow(wx),
-        t0 = as.numeric(rng[1]),
-        t1 = as.numeric(rng[2]),
-        sumT = round(sum(wx$temp, na.rm = TRUE), 2),
-        sumR = round(sum(wx$prec, na.rm = TRUE), 3),
-        lat = suppressWarnings(as.numeric(wx$lat[1])),
-        lon = suppressWarnings(as.numeric(wx$long[1]))
+        n = as.integer(nrow(wx)),
+        t0 = t0,
+        t1 = t1,
+        lat = if (is.finite(lat1)) round(lat1, 6) else NA_real_,
+        lon = if (is.finite(lon1)) round(lon1, 6) else NA_real_
+        # sumT/sumR removed to avoid key drift
       )
     }
+
 
     # ---- Telemetry store (reactiveVal) ----
     .metrics <- reactiveVal(list(
@@ -252,22 +299,22 @@ mod_engine_server <- function(
       has_standard <- all(c("temp", "rh", "ws") %in% names(df))
       needed_map <- c(mapping$col_temp(), mapping$col_rh(), mapping$col_ws(), mapping$col_rain())
       if (!has_standard) {
-        validate(need(all(nzchar(needed_map)), tr("err_non_numeric_cols")))
+        validate(need(all(nzchar(needed_map)), isolate(tr("err_non_numeric_cols"))))
         bad <- Filter(function(nm) !is.numeric(df[[nm]]), needed_map)
-        validate(need(length(bad) == 0, tr("err_non_numeric_cols", cols = paste(bad, collapse = ", "))))
+        validate(need(length(bad) == 0, isolate(tr("err_non_numeric_cols", cols = paste(bad, collapse = ", ")))))
       }
 
       # Init & location validations
       validate(
-        need(is.finite(init$ffmc0()) && data.table::between(init$ffmc0(), 0, 101), tr("err_ffmc_range")),
-        need(is.finite(init$dmc0()) && init$dmc0() >= 0, tr("err_dmc_range")),
-        need(is.finite(init$dc0()) && init$dc0() >= 0, tr("err_dc_range")),
+        need(is.finite(init$ffmc0()) && data.table::between(init$ffmc0(), 0, 101), isolate(tr("err_ffmc_range"))),
+        need(is.finite(init$dmc0()) && init$dmc0() >= 0, isolate(tr("err_dmc_range"))),
+        need(is.finite(init$dc0()) && init$dc0() >= 0, isolate(tr("err_dc_range"))),
         need(is.finite(mapping$manual_lat()) && data.table::between(mapping$manual_lat(), -90, 90), "Latitude must be between -90 and 90."),
         need(is.finite(mapping$manual_lon()) && data.table::between(mapping$manual_lon(), -180, 180), "Longitude must be between -180 and 180.")
       )
 
       tz_use <- isolate(tz$tz_use())
-      validate(need(tz_use %in% OlsonNames(), tr("err_tz_invalid")))
+      validate(need(tz_use %in% OlsonNames(), isolate(tr("err_tz_invalid"))))
 
       # Build datetime (prefer standard hourly columns)
       dt_local <- NULL
@@ -529,7 +576,7 @@ mod_engine_server <- function(
       validate(need(!is.null(out), "hFWI() call failed; check the Log tab for details."))
 
       dt <- data.table::as.data.table(as.data.frame(out))
-
+      # t1 <- proc.time()[["elapsed"]]
       # Rounding
       lat_digits <- memo_count_decimals(isolate(mapping$manual_lat()))
       if (!is.finite(lat_digits) || lat_digits < 0) lat_digits <- 4L
