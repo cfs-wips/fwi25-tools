@@ -49,6 +49,13 @@ mod_timezone_ui <- function(id) {
 mod_timezone_server <- function(id, tr, manual_lat, manual_lon, browser_tz, lookup_result) {
   moduleServer(id, function(input, output, session) {
     tz_guess <- reactiveVal(NULL)
+    tz_stable <- reactiveVal(NULL) # the value we expose to the app
+    tz_initialized <- reactiveVal(FALSE) # have we set the initial tz?
+
+    lookup_debounced <- debounce(
+      reactive(lookup_result()),
+      millis = 400
+    )
 
 
     output$lbl_time_zone <- renderUI({
@@ -97,9 +104,47 @@ mod_timezone_server <- function(id, tr, manual_lat, manual_lon, browser_tz, look
     })
 
     # Accept lookup results (JS or server) for the inferred zone
-    observeEvent(lookup_result(), ignoreInit = TRUE, {
-      val <- lookup_result()
-      if (is.character(val) && nzchar(val)) tz_guess(val)
+
+    observeEvent(lookup_debounced(), ignoreInit = TRUE, {
+      val <- lookup_debounced()
+      if (identical(input$tz_mode, "auto") && is.character(val) && nzchar(val)) {
+        # Only update if different from current stable value
+        if (!identical(tz_stable(), val)) tz_stable(val)
+        tz_guess(val) # keep the raw guess accessible for UI messages
+      }
+    })
+
+    observeEvent(browser_tz(), ignoreInit = FALSE, {
+      if (!isTRUE(tz_initialized())) {
+        bt <- browser_tz()
+        if (is.character(bt) && nzchar(bt)) {
+          tz_stable(bt) # expose browser TZ immediately
+          tz_initialized(TRUE) # latch so we don't change again inadvertently
+        }
+      }
+    })
+
+
+    # When switching modes, do not mutate tz_stable unless needed
+    observeEvent(input$tz_mode, ignoreInit = TRUE, {
+      if (identical(input$tz_mode, "fixed")) {
+        # Wait for explicit selection; do nothing here
+        return(invisible())
+      }
+      if (identical(input$tz_mode, "auto")) {
+        # In auto mode, if we have a guess, align stable tz; otherwise keep the browser tz
+        val <- tz_guess()
+        if (is.character(val) && nzchar(val) && !identical(tz_stable(), val)) {
+          tz_stable(val)
+        }
+      }
+    })
+
+    # In fixed mode, reflect the selected Olson name into tz_stable
+    observeEvent(input$fixed_tz, ignoreInit = TRUE, {
+      if (identical(input$tz_mode, "fixed") && is.character(input$fixed_tz) && nzchar(input$fixed_tz)) {
+        if (!identical(tz_stable(), input$fixed_tz)) tz_stable(input$fixed_tz)
+      }
     })
 
     # Live status line
@@ -122,19 +167,31 @@ mod_timezone_server <- function(id, tr, manual_lat, manual_lon, browser_tz, look
       }
     })
 
-    # Expose selected tz
+
+    # --- Replace: expose the stable tz only ---
+
+
     tz_use <- reactive({
       if (identical(input$tz_mode, "fixed")) {
-        input$fixed_tz
-      } else {
-        if (!is.null(tz_guess())) {
-          tz_guess()
-        } else {
-          bt <- browser_tz()
-          if (is.character(bt) && nzchar(bt)) bt else NULL
-        }
+        return(input$fixed_tz)
       }
+
+      # If no file yet, return NULL
+      if (!isTruthy(lookup_result())) {
+        return(NULL)
+      }
+
+      # Prefer file-derived tz
+      file_tz <- lookup_result()
+      if (is.character(file_tz) && nzchar(file_tz)) {
+        return(file_tz)
+      }
+
+      # Fallback to browser tz only after file is loaded and no tz found
+      bt <- browser_tz()
+      if (is.character(bt) && nzchar(bt)) bt else NULL
     })
+
 
     return(list(
       tz_mode          = reactive(input$tz_mode),

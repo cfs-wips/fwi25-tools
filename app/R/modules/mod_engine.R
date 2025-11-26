@@ -627,19 +627,52 @@ mod_engine_server <- function(
         daily_in[, datetime := as.POSIXct(sprintf("%04d-%02d-%02d 12:00:00", yr, mon, day), tz = tz_use)]
         daily_in[, date := as.Date(datetime)]
 
-        out <- tryCatch(
-          {
-            cffdrs::fwi(
-              input = as.data.frame(daily_in),
-              init = data.frame(ffmc = isolate(init$ffmc0()), dmc = isolate(init$dmc0()), dc = isolate(init$dc0()), lat = daily_in$lat[1]),
-              batch = TRUE, out = "all", lat.adjust = TRUE, uppercase = FALSE
-            )
-          },
-          error = function(e) {
-            message("cffdrs::fwi() failed on daily_src: ", conditionMessage(e))
-            NULL
-          }
-        )
+        if (!data.table::is.data.table(daily_in)) data.table::setDT(daily_in)
+
+        ranges <- daily_in[, .(
+          min_date = base::min(date, na.rm = TRUE),
+          max_date = base::max(date, na.rm = TRUE)
+        ), by = id]
+
+        if (length(unique(ranges$min_date)) > 1L || length(unique(ranges$max_date)) > 1L) {
+          showNotification(
+            "Stations have different start/end dates. Running FWI per station.",
+            type = "warning", duration = 6
+          )
+        }
+
+
+        ranges <- daily_in[, .(min_date = min(date), max_date = max(date)), by = id]
+        if (length(unique(ranges$min_date)) > 1 || length(unique(ranges$max_date)) > 1) {
+          showNotification("Stations have different start/end dates. Running FWI per station.", type = "warning", duration = 6)
+        }
+
+        stn_list <- split(daily_in, daily_in$id)
+
+        results <- lapply(stn_list, function(stn) {
+          tryCatch(
+            {
+              cffdrs::fwi(
+                input = as.data.frame(stn),
+                init = data.frame(
+                  ffmc = isolate(init$ffmc0()),
+                  dmc = isolate(init$dmc0()),
+                  dc = isolate(init$dc0()),
+                  lat = stn$lat[1]
+                ),
+                batch = TRUE, out = "all", lat.adjust = TRUE, uppercase = FALSE
+              )
+            },
+            error = function(e) {
+              message(sprintf("cffdrs::fwi() failed for station %s: %s", unique(stn$id), conditionMessage(e)))
+              NULL
+            }
+          )
+        })
+
+        # Combine results
+        out <- data.table::rbindlist(lapply(Filter(Negate(is.null), results), as.data.frame), fill = TRUE)
+
         if (is.null(out)) {
           return(NULL)
         }
@@ -759,6 +792,25 @@ mod_engine_server <- function(
         long = as.numeric(long_vec),
         id   = as.character(noon_tbl$id)
       )
+      daily_in[, date := as.Date(sprintf("%04d-%02d-%02d", yr, mon, day))]
+
+      if (!data.table::is.data.table(daily_in)) data.table::setDT(daily_in)
+      ranges <- daily_in[, .(
+        min_date = base::min(date, na.rm = TRUE),
+        max_date = base::max(date, na.rm = TRUE)
+      ), by = id]
+      if (length(unique(ranges$min_date)) > 1L || length(unique(ranges$max_date)) > 1L) {
+        showNotification(
+          "Stations have different start/end dates. FWI will run row-wise under batch mode.",
+          type = "warning", duration = 6
+        )
+      }
+
+      ranges <- daily_in[, .(min_date = min(date), max_date = max(date)), by = id]
+      if (length(unique(ranges$min_date)) > 1 || length(unique(ranges$max_date)) > 1) {
+        showNotification("Stations have different start/end dates. FWI will run per station logic internally.", type = "warning", duration = 6)
+      }
+
       out <- tryCatch(
         {
           cffdrs::fwi(
