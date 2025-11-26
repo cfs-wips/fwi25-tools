@@ -1,13 +1,17 @@
 options(fwi.debug_times = FALSE)
 options(shiny.bindcache.default = "session")
-
+reactlog::reactlog_enable()
 library(shiny)
 library(munsell)
 
 # Source NG-CFFDRS vendored code
-source("ng/util.r", local = FALSE)
-source("ng/make_inputs.r", local = FALSE)
-source("ng/NG_FWI.r", local = FALSE)
+# source("ng/util.r", local = FALSE)
+# source("ng/NG_FWI.r", local = FALSE)
+# source("ng/make_inputs.r", local = FALSE)
+# Source my vectorized version of the ng-cffdrs code
+source("ng/util_vectorized.r", local = FALSE)
+source("ng/NG_FWI_vectorized.r", local = FALSE)
+
 
 # Source modules
 for (f in list.files("R/modules", pattern = "\\.R$", full.names = TRUE)) source(f, local = FALSE)
@@ -18,22 +22,22 @@ server <- function(input, output, session) {
   tr <- i18n$tr
   dt_i18n <- i18n$dt_i18n
   label_for_col <- i18n$label_for_col
-  
+
   # Tab titles
   output$tab_output_title <- renderText(tr("tab_output"))
   output$tab_plot_title <- renderText(tr("tab_plot"))
   output$tab_log_title <- renderText(tr("tab_log"))
   output$tab_inputs_title <- renderText(tr("data_src_inputs"))
-  
+
   # Dynamic pre-run messages
   output$pre_run_output_msg <- output$pre_run_tables_msg <- renderUI({
     tags$p(tr("hint_upload_and_run"), " ", tags$strong(tr("run_hfwi")), " ", tr("hint_generate_tables"))
   })
-  
+
   output$pre_run_plot_msg <- renderUI({
     tags$p(tr("hint_upload_to_view"))
   })
-  
+
   # ---- Upload + mapping ----
   up <- mod_upload_server("upload", tr)
   map <- mod_mapping_server("mapping", tr, cols = up$cols, df = up$raw_file)
@@ -45,7 +49,7 @@ server <- function(input, output, session) {
     lookup_result = reactive(input$tz_lookup_result)
   )
   init <- mod_init_server("init", tr)
-  
+
   # ---- Prepare (daily→hourly) ----
   prep <- mod_prepare_server(
     id = "prepare",
@@ -56,24 +60,26 @@ server <- function(input, output, session) {
     skip_invalid = TRUE,
     notify = TRUE
   )
-  
+
   # Inputs tab
   mod_inputs_server(
     id = "inputs",
     tr = tr,
     dt_i18n = dt_i18n,
-    raw_data = prep$raw_uploaded,   # original upload
-    hourly_data = prep$hourly_file  # hourly (converted or passthrough)
+    raw_data = prep$raw_uploaded, # original upload
+    hourly_data = prep$hourly_file # hourly (converted or passthrough)
   )
-  
+
   # Show/hide Log tab
-  output$can_show_log <- reactive({ !is.null(prep$hourly_file()) })
+  output$can_show_log <- reactive({
+    !is.null(prep$hourly_file())
+  })
   outputOptions(output, "can_show_log", suspendWhenHidden = FALSE)
-  
+
   fil <- mod_filter_server("filter", tr, tz, raw_file = up$raw_file, mapping = map)
-  
+
   run_token <- reactiveVal(0L)
-  
+
   # ---- Engine ----
   eng <- mod_engine_server(
     id = "engine",
@@ -84,43 +90,47 @@ server <- function(input, output, session) {
     filt = fil,
     init = init,
     tr = tr,
-    run_click = run_token,
-    debounce_ms = 400,
+    run_click = debounce(run_token, 400),
     cache = "app",
     enable_cache = TRUE
   )
-  
+
   # ---- Actions ----
   acts <- mod_actions_server(
     "actions", tr,
     results = reactive(eng$run_model()),
     csv_name = up$csv_name
   )
-  
+
   # ---- Plot reseed ----
   reseed_tick <- reactiveVal(0L)
   bump_reseed <- function() reseed_tick(isolate(reseed_tick()) + 1L)
-  observeEvent(input$main_tabs, {
-    if (identical(input$main_tabs, "Plot")) bump_reseed()
-  }, ignoreInit = TRUE)
-  
+  observeEvent(input$main_tabs,
+    {
+      if (identical(input$main_tabs, "Plot")) bump_reseed()
+    },
+    ignoreInit = TRUE
+  )
+
   # ---- Results visibility ----
   app_state <- reactiveValues(ran = FALSE)
-  output$can_show_results <- reactive({ isTRUE(app_state$ran) })
+  output$can_show_results <- reactive({
+    isTRUE(app_state$ran)
+  })
   outputOptions(output, "can_show_results", suspendWhenHidden = FALSE)
-  
+
   observeEvent(up$csv_name(), ignoreInit = TRUE, {
     app_state$ran <- FALSE
     session$sendCustomMessage("form-reset", "controls")
   })
-  
+
   observeEvent(acts$run(), {
     app_state$ran <- TRUE
     session$onFlushed(function() {
       run_token(isolate(run_token()) + 1L)
     }, once = TRUE)
   })
-  
+
   # ---- Outputs ----
   mod_results_table_server(
     "results_table", tr, dt_i18n,
