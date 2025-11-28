@@ -39,8 +39,8 @@ server <- function(input, output, session) {
   })
 
   # ---- Upload + mapping ----
-  up <- mod_upload_server("upload", isolate(tr))
-  map <- mod_mapping_server("mapping", isolate(tr), cols = up$cols, df = up$raw_file)
+  up <- mod_upload_server("upload", isolate(tr), i18n$lang)
+  map <- mod_mapping_server("mapping", isolate(tr), lang = i18n$lang, cols = up$cols, df = up$raw_file)
   tz <- mod_timezone_server(
     "tz", isolate(tr),
     manual_lat = map$manual_lat,
@@ -53,9 +53,9 @@ server <- function(input, output, session) {
   # ---- Prepare (daily→hourly) ----
   prep <- mod_prepare_server(
     id = "prepare",
-    raw_file = up$raw_file,
-    mapping = map,
-    tz = tz,
+    raw_file = up$raw_file, # or however your upload module exposes it
+    mapping = map, # object with mapping$col_* reactives
+    tz = tz, # object with tz$tz_use(), tz$tz_offset_policy()
     diurnal_method_reactive = reactive(input$diurnal_method),
     skip_invalid = TRUE,
     notify = TRUE
@@ -145,8 +145,8 @@ server <- function(input, output, session) {
     ignore_dst_reactive = tz$tz_offset_policy
   )
   mod_plot_server(
-    "plot", isolate(tr), i18n, label_for_col,
-    shaped_input = eng$shaped_input_preview,
+    "plot", isolate(tr), i18n$lang, label_for_col,
+    shaped_input = eng$shaped_input,
     results = eng$run_model,
     df87 = eng$daily_fwi_df,
     tz_reactive = tz$tz_use,
@@ -160,6 +160,7 @@ server <- function(input, output, session) {
     raw_file = prep$prep_meta,
     df87 = reactive(eng$daily_fwi_df()),
     init = init,
+    prep_meta = prep$prep_meta,
     metrics = eng$metrics
   )
 }

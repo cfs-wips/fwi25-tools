@@ -2,40 +2,94 @@
 mod_mapping_ui <- function(id) {
   ns <- NS(id)
   tagList(
-    # CHANGED: textOutput -> uiOutput to render label + tooltip + help panel
     h4(id = ns("lbl_column_mapping"), uiOutput(ns("lbl_column_mapping"))),
-    tags$div(
-      role = "group", `aria-labelledby` = ns("lbl_column_mapping"),
-      tags$div(class = "mapping-block", uiOutput(ns("mapping_ui")))
+    tags$fieldset(
+      id = ns("mapping_fs"), # for JS targeting
+      role = "group",
+      `aria-labelledby` = ns("lbl_column_mapping"),
+      `aria-disabled` = "true", # start disabled until file upload
+      # Static inputs (values persist across language toggles)
+      fluidRow(
+        column(6, selectInput(ns("col_datetime"), label = NULL, choices = "", selected = "")),
+        column(6, selectInput(ns("col_id"), label = NULL, choices = "", selected = ""))
+      ),
+      fluidRow(
+        column(6, selectInput(ns("col_date"), label = NULL, choices = "", selected = "")),
+        column(6, selectInput(ns("col_time"), label = NULL, choices = "", selected = ""))
+      ),
+      fluidRow(
+        column(3, selectInput(ns("col_year"), label = NULL, choices = "", selected = "")),
+        column(3, selectInput(ns("col_month"), label = NULL, choices = "", selected = "")),
+        column(3, selectInput(ns("col_day"), label = NULL, choices = "", selected = "")),
+        column(3, selectInput(ns("col_hour"), label = NULL, choices = "", selected = ""))
+      ),
+      fluidRow(
+        column(3, selectInput(ns("col_temp"), label = NULL, choices = "", selected = "")),
+        column(3, selectInput(ns("col_rh"), label = NULL, choices = "", selected = "")),
+        column(3, selectInput(ns("col_ws"), label = NULL, choices = "", selected = "")),
+        column(3, selectInput(ns("col_rain"), label = NULL, choices = "", selected = ""))
+      ),
+      fluidRow(
+        column(6, selectInput(ns("col_solrad"), label = NULL, choices = "", selected = ""))
+      ),
+      fluidRow(
+        column(6, numericInput(ns("manual_lat"),
+          label = NULL, value = NULL,
+          min = -90, max = 90, step = 0.0001
+        )),
+        column(6, numericInput(ns("manual_lon"),
+          label = NULL, value = NULL,
+          min = -180, max = 180, step = 0.0001
+        ))
+      )
     )
   )
 }
 
-mod_mapping_server <- function(id, tr, cols, df) {
+
+
+
+mod_mapping_server <- function(id, tr, lang, cols, df) {
   moduleServer(id, function(input, output, session) {
-    # --- Section heading with tooltip + expandable help ---
+    # --- Section heading ---
     output$lbl_column_mapping <- renderUI({
-      # Uses existing i18n keys: column_mapping, tt_mapping_header, mapping_help
       label_with_help_rich(
-        label_text = tr("column_mapping"),
-        tip_text = tr("tt_mapping_header"),
+        label_text   = tr("column_mapping"),
+        tip_text     = tr("tt_mapping_header"),
         popover_html = tr("mapping_help"),
-        sr_label = tr("column_mapping")
+        sr_label     = tr("column_mapping")
       )
     })
 
-    # --- Helper: safe, practical column guesser (fixed regex) ---
+    # --- JS toggle for disabled state ---
+    observe({
+      session$sendCustomMessage("mappingSetDisabled", list(
+        id = session$ns("mapping_fs"),
+        disabled = (length(cols()) == 0)
+      ))
+    }) |> bindEvent(cols())
 
+    # --- Helper functions ---
+    tt_or_null <- function(key) {
+      v <- tr(key)
+      if (identical(v, key)) NULL else v
+    }
+    label_tag <- function(k, tt = NULL) {
+      if (is.null(tt)) {
+        tr(k)
+      } else {
+        tip <- tt_or_null(tt)
+        if (is.null(tip)) tr(k) else label_with_help(tr(k), tip)
+      }
+    }
 
     find_col <- function(cols, keywords) {
-      escape_rx <- function(x) gsub("([\\.^$|()*+?{}\\[\\]\\\\])", "\\\\\\1", x, perl = TRUE)
-      rx <- paste0("^(", paste(escape_rx(keywords), collapse = "|"), ")$")
+      escape <- function(x) gsub("([\\.^$(){}+*?|\\[\\]\\\\])", "\\\\\\1", x, perl = TRUE)
+      rx <- paste0("^(", paste(escape(keywords), collapse = "|"), ")$")
       m <- cols[grepl(rx, cols, ignore.case = TRUE)]
       if (length(m) > 0) {
         return(m[1])
       }
-
-      # Fallback: normalized comparison (letters+digits only)
       norm <- function(x) gsub("[^a-z0-9]+", "", tolower(trimws(x)))
       nc <- norm(cols)
       nk <- norm(keywords)
@@ -43,218 +97,129 @@ mod_mapping_server <- function(id, tr, cols, df) {
       if (length(idx) > 0) cols[idx[1]] else ""
     }
 
-
-    # --- Helper: only show a tooltip if the i18n entry exists ---
-    tt_or_null <- function(key) {
-      val <- tr(key)
-      if (identical(val, key)) NULL else val
-    }
-    lbl <- function(label_key, tt_key = NULL) {
-      if (is.null(tt_key)) {
-        tr(label_key)
-      } else {
-        tip <- tt_or_null(tt_key)
-        if (is.null(tip)) tr(label_key) else label_with_help(tr(label_key), tip)
-      }
-    }
-
-    output$mapping_ui <- renderUI({
-      has_file <- length(cols()) > 0
+    # --- Update choices when file changes ---
+    observeEvent(cols(), {
       cc <- cols()
-      pick_sel <- function(val) if (has_file) val else ""
-      fc <- function(x, include_blank = TRUE) if (include_blank) c("", x) else x
-      disabled_attr <- if (!has_file) NA else NULL
-      aria_state <- if (!has_file) "true" else "false"
+      choices <- c("", cc)
+      keep_or <- function(cur, pool, fallback) if (nzchar(cur) && cur %in% pool) cur else fallback
 
-      tagList(
-        tags$fieldset(
-          class = "mapping-ui-fieldset",
-          disabled = disabled_attr, `aria-disabled` = aria_state,
-
-          # Row 1: datetime + id
-          fluidRow(
-            column(
-              6,
-              selectInput(
-                session$ns("col_datetime"),
-                lbl("col_datetime", "tt_col_datetime"),
-                choices  = fc(cc),
-                selected = pick_sel(find_col(cc, c("datetime", "timestamp")))
-              )
-            ),
-            column(
-              6,
-              selectInput(
-                session$ns("col_id"),
-                # No tt_col_id defined in i18n; label will render without tooltip.
-                lbl("col_id", "tt_col_id"),
-                choices  = fc(cc),
-                selected = pick_sel(find_col(cc, c("Station Name", "Station", "ID", "WMO", "AES")))
-              )
-            )
-          ),
-
-          # Row 1b: Date + Time (optional, alternative path)
-          fluidRow(
-            column(
-              6,
-              selectInput(
-                session$ns("col_date"),
-                lbl("col_date", "tt_col_date"),
-                choices  = fc(cc),
-                selected = pick_sel(find_col(cc, c("date", "day_date", "dt", "obs_date")))
-              )
-            ),
-            column(
-              6,
-              selectInput(
-                session$ns("col_time"),
-                lbl("col_time", "tt_col_time"),
-                choices  = fc(cc),
-                selected = pick_sel(find_col(cc, c("time", "hour_min", "obs_time", "hhmm", "hh:mm")))
-              )
-            )
-          ),
-
-          # Row 2: Y/M/D/H (existing)
-          fluidRow(
-            column(
-              3,
-              selectInput(
-                session$ns("col_year"),
-                lbl("col_year", "tt_col_year"),
-                choices  = fc(cc),
-                selected = pick_sel(find_col(cc, c("year", "yr", "y")))
-              )
-            ),
-            column(
-              3,
-              selectInput(
-                session$ns("col_month"),
-                lbl("col_month", "tt_col_month"),
-                choices  = fc(cc),
-                selected = pick_sel(find_col(cc, c("month", "mon", "m")))
-              )
-            ),
-            column(
-              3,
-              selectInput(
-                session$ns("col_day"),
-                lbl("col_day", "tt_col_day"),
-                choices  = fc(cc),
-                selected = pick_sel(find_col(cc, c("day", "dy", "d")))
-              )
-            ),
-            column(
-              3,
-              selectInput(
-                session$ns("col_hour"),
-                lbl("col_hour", "tt_col_hour"),
-                choices  = fc(cc),
-                selected = pick_sel(find_col(cc, c("hour", "hr", "h")))
-              )
-            )
-          ),
-
-          # Row 3: met inputs (existing)
-          fluidRow(
-            column(
-              3,
-              selectInput(
-                session$ns("col_temp"),
-                lbl("col_temp", "tt_col_temp"),
-                choices  = fc(cc),
-                selected = pick_sel(find_col(cc, c("temp", "temperature", "t")))
-              )
-            ),
-            column(
-              3,
-              selectInput(
-                session$ns("col_rh"),
-                lbl("col_rh", "tt_col_rh"),
-                choices  = fc(cc),
-                selected = pick_sel(find_col(cc, c("rh", "relative humidity", "relative.humidity", "relative_humidity", "humidity")))
-              )
-            ),
-            column(
-              3,
-              selectInput(
-                session$ns("col_ws"),
-                lbl("col_ws", "tt_col_ws"),
-                choices  = fc(cc),
-                selected = pick_sel(find_col(cc, c("ws", "windspeed", "wind_speed", "wind.speed", "wind speed", "Wspd", "Wnd", "Wndspd")))
-              )
-            ),
-            column(
-              3,
-              selectInput(
-                session$ns("col_rain"),
-                lbl("col_rain", "tt_col_rain"),
-                choices  = fc(cc),
-                selected = pick_sel(find_col(cc, c("rain", "prec", "precip", "precip_mm", "prec_mm", "rain_mm", "rf", "rn")))
-              )
-            )
-          ),
-
-          # Row 3b: Solar radiation (optional)
-          fluidRow(
-            column(
-              6,
-              selectInput(
-                session$ns("col_solrad"),
-                lbl("col_solrad", "tt_col_solrad"),
-                choices = fc(cc),
-                selected = pick_sel(find_col(cc, c(
-                  "solar", "solrad", "solar_radiation", "shortwave", "srad",
-                  "rsds", "swdown", "rad", "radiation", "rad_wm2"
-                )))
-              )
-            )
-          ),
-
-          # Row 4: manual lat/lon (existing)
-          fluidRow(
-            column(
-              6,
-              numericInput(
-                session$ns("manual_lat"),
-                lbl("lat_label", "tt_manual_lat"),
-                value = NULL, min = -90, max = 90, step = 0.0001
-              )
-            ),
-            column(
-              6,
-              numericInput(
-                session$ns("manual_lon"),
-                lbl("lon_label", "tt_manual_lon"),
-                value = NULL, min = -180, max = 180, step = 0.0001
-              )
-            )
-          )
-        )
+      updateSelectInput(session, "col_datetime",
+        choices = choices,
+        selected = keep_or(input$col_datetime, cc, find_col(cc, c("datetime", "timestamp")))
       )
+      updateSelectInput(session, "col_id",
+        choices = choices,
+        selected = keep_or(input$col_id, cc, find_col(cc, c("Station Name", "Station", "ID", "WMO", "AES")))
+      )
+      updateSelectInput(session, "col_date",
+        choices = choices,
+        selected = keep_or(input$col_date, cc, find_col(cc, c("date", "obs_date", "dt", "day_date")))
+      )
+      updateSelectInput(session, "col_time",
+        choices = choices,
+        selected = keep_or(input$col_time, cc, find_col(cc, c("time", "obs_time", "hour_min", "hhmm", "hh:mm")))
+      )
+      updateSelectInput(session, "col_year",
+        choices = choices,
+        selected = keep_or(input$col_year, cc, find_col(cc, c("year", "yr", "y")))
+      )
+      updateSelectInput(session, "col_month",
+        choices = choices,
+        selected = keep_or(input$col_month, cc, find_col(cc, c("month", "mon", "m")))
+      )
+      updateSelectInput(session, "col_day",
+        choices = choices,
+        selected = keep_or(input$col_day, cc, find_col(cc, c("day", "dy", "d")))
+      )
+      updateSelectInput(session, "col_hour",
+        choices = choices,
+        selected = keep_or(input$col_hour, cc, find_col(cc, c("hour", "hr", "h")))
+      )
+      updateSelectInput(session, "col_temp",
+        choices = choices,
+        selected = keep_or(input$col_temp, cc, find_col(cc, c("temp", "temperature", "t")))
+      )
+      updateSelectInput(session, "col_rh",
+        choices = choices,
+        selected = keep_or(input$col_rh, cc, find_col(cc, c("rh", "humidity", "relative_humidity", "relative humidity")))
+      )
+      updateSelectInput(session, "col_ws",
+        choices = choices,
+        selected = keep_or(input$col_ws, cc, find_col(cc, c("ws", "windspeed", "wind_speed", "wind.speed", "wind speed", "wspd", "wnd", "wndspd")))
+      )
+      updateSelectInput(session, "col_rain",
+        choices = choices,
+        selected = keep_or(input$col_rain, cc, find_col(cc, c("rain", "precip", "prec", "precip_mm", "prec_mm", "rain_mm", "rf", "rn")))
+      )
+      updateSelectInput(session, "col_solrad",
+        choices = choices,
+        selected = keep_or(input$col_solrad, cc, find_col(cc, c("solar", "solrad", "solar_radiation", "shortwave", "srad", "rsds", "swdown", "rad", "radiation", "rad_wm2")))
+      )
+
+      # Prefill lat/lon if blank
+      dval <- df()
+      dn <- names(dval)
+      lat_col <- find_col(dn, c("lat", "latitude"))
+      lon_col <- find_col(dn, c("lon", "long", "longitude"))
+      lat_def <- suppressWarnings(as.numeric(if (nzchar(lat_col)) dval[[lat_col]][1] else NA))
+      lon_def <- suppressWarnings(as.numeric(if (nzchar(lon_col)) dval[[lon_col]][1] else NA))
+      if (!is.finite(lat_def)) lat_def <- 55
+      if (!is.finite(lon_def)) lon_def <- -120
+      if (is.null(input$manual_lat) || !is.finite(input$manual_lat)) updateNumericInput(session, "manual_lat", value = lat_def)
+      if (is.null(input$manual_lon) || !is.finite(input$manual_lon)) updateNumericInput(session, "manual_lon", value = lon_def)
     })
 
-    # Prefill manual lat/lon from first row if present
-    observeEvent(cols(), ignoreInit = TRUE, {
+    # --- Update labels on language toggle ---
+    set_all_labels <- function() {
+      updateSelectInput(session, "col_datetime", label = label_tag("col_datetime", "tt_col_datetime"))
+      updateSelectInput(session, "col_id", label = label_tag("col_id", "tt_col_id"))
+      updateSelectInput(session, "col_date", label = label_tag("col_date", "tt_col_date"))
+      updateSelectInput(session, "col_time", label = label_tag("col_time", "tt_col_time"))
+      updateSelectInput(session, "col_year", label = label_tag("col_year", "tt_col_year"))
+      updateSelectInput(session, "col_month", label = label_tag("col_month", "tt_col_month"))
+      updateSelectInput(session, "col_day", label = label_tag("col_day", "tt_col_day"))
+      updateSelectInput(session, "col_hour", label = label_tag("col_hour", "tt_col_hour"))
+      updateSelectInput(session, "col_temp", label = label_tag("col_temp", "tt_col_temp"))
+      updateSelectInput(session, "col_rh", label = label_tag("col_rh", "tt_col_rh"))
+      updateSelectInput(session, "col_ws", label = label_tag("col_ws", "tt_col_ws"))
+      updateSelectInput(session, "col_rain", label = label_tag("col_rain", "tt_col_rain"))
+      updateSelectInput(session, "col_solrad", label = label_tag("col_solrad", "tt_col_solrad"))
+      updateNumericInput(session, "manual_lat", label = label_tag("lat_label", "tt_manual_lat"))
+      updateNumericInput(session, "manual_lon", label = label_tag("lon_label", "tt_manual_lon"))
+    }
+    observeEvent(TRUE,
+      {
+        set_all_labels()
+      },
+      once = TRUE
+    )
+    observeEvent(lang(),
+      {
+        set_all_labels()
+      },
+      ignoreInit = FALSE
+    )
+
+    # --- Ready flag for gating Prepare/Run ---
+    mapping_ready <- reactive({
       has_file <- length(cols()) > 0
-      df <- df()
-      cc <- names(df)
-      lat_col <- find_col(cc, c("lat", "latitude"))
-      lon_col <- find_col(cc, c("lon", "long", "longitude"))
-      lat_default <- suppressWarnings(as.numeric(if (nzchar(lat_col)) df[[lat_col]][1] else NA))
-      lon_default <- suppressWarnings(as.numeric(if (nzchar(lon_col)) df[[lon_col]][1] else NA))
-      if (!is.finite(lat_default)) lat_default <- 55
-      if (!is.finite(lon_default)) lon_default <- -120
-      updateNumericInput(session, "manual_lat", value = lat_default)
-      updateNumericInput(session, "manual_lon", value = lon_default)
+      has_dt <- nzchar(input$col_datetime)
+      has_ymdh <- all(
+        nzchar(input$col_year), nzchar(input$col_month),
+        nzchar(input$col_day), nzchar(input$col_hour)
+      )
+      has_met <- all(
+        nzchar(input$col_temp), nzchar(input$col_rh),
+        nzchar(input$col_ws), nzchar(input$col_rain)
+      )
+      has_geo <- isTRUE(is.finite(input$manual_lat)) && isTRUE(is.finite(input$manual_lon))
+      has_file && (has_dt || has_ymdh) && has_met && has_geo
     })
 
+    # Return reactives
     return(list(
       col_datetime = reactive(input$col_datetime),
       col_id       = reactive(input$col_id),
-
-      # NEW: optional Date + Time + Solar selections
       col_date     = reactive(input$col_date),
       col_time     = reactive(input$col_time),
       col_solrad   = reactive(input$col_solrad),
@@ -267,7 +232,8 @@ mod_mapping_server <- function(id, tr, cols, df) {
       col_ws       = reactive(input$col_ws),
       col_rain     = reactive(input$col_rain),
       manual_lat   = reactive(input$manual_lat),
-      manual_lon   = reactive(input$manual_lon)
+      manual_lon   = reactive(input$manual_lon),
+      ready        = mapping_ready
     ))
   })
 }

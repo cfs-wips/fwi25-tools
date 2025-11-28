@@ -15,7 +15,7 @@ for (f in list.files("R/modules", pattern = "\\.R$", full.names = TRUE)) {
 
 ui <- fluidPage(
   title = NULL,
-  shinyjs::useShinyjs(),
+  # shinyjs::useShinyjs(),
   tags$head(
     tags$title("FWI2025"),
     # Accessibility and dynamic title
@@ -38,6 +38,16 @@ ui <- fluidPage(
       });
     ")),
     tags$script(HTML("
+      Shiny.addCustomMessageHandler('mappingSetDisabled', function(msg) {
+        var el = document.getElementById(msg.id);
+        if (!el) return;
+        var disabled = !!msg.disabled;
+        el.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+        el.style.pointerEvents = disabled ? 'none' : 'auto';
+        el.style.opacity = disabled ? '0.6' : '1';
+      });
+    ")),
+    tags$script(HTML("
       document.addEventListener('shiny:recalculating', function(ev){
         var el = ev.target; if(!el) return;
         var card = el.closest('.gc-card'); if(card) card.classList.add('busy');
@@ -55,6 +65,7 @@ ui <- fluidPage(
       .gc-card .dataTables_wrapper{overflow-x:auto;}
     ")),
     tags$script(src = "tz.js"),
+    tags$script(src = "upload_labels.js"),
     tags$script(HTML("
       if(document.readyState === 'complete'){ initializeTZ(); } else { window.addEventListener('load', initializeTZ); }
       function initializeTZ(){
@@ -108,7 +119,7 @@ ui <- fluidPage(
           `aria-label` = "Primary output tabs",
           tabsetPanel(
             id = "main_tabs",
-            selected="Output",
+            selected = "Output",
             tabPanel(
               title = textOutput("tab_output_title"),
               value = "Output",
@@ -162,7 +173,7 @@ ui <- fluidPage(
                 )
               ),
               conditionalPanel(
-                condition = "output.can_show_log",  # Only show Inputs tab when data is ready
+                condition = "output.can_show_log", # Only show Inputs tab when data is ready
                 mod_inputs_ui("inputs")
               )
             )
