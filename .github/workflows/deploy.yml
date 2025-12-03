@@ -1,3 +1,4 @@
+
 name: Build & Deploy Shinylive app to GitHub Pages
 
 on:
@@ -15,7 +16,6 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,7 +33,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-r-
 
-      # Install only required packages
       - name: Install R packages
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
@@ -46,6 +45,7 @@ jobs:
             any::lubridate
             any::data.table
             any::cffdrs
+            any::munsell
           needs: |
             shinylive
             shiny
@@ -55,53 +55,48 @@ jobs:
             lubridate
             data.table
             cffdrs
+            munsell
 
-      # ✅ Install munsell locally so shinylive::export can bundle it
-      - name: Install missing dependency (munsell)
+      # ✅ Prebundle WASM packages using rwasm
+      - name: Prebundle WASM packages
         shell: Rscript {0}
         run: |
-          install.packages("munsell")
+          install.packages("rwasm", repos = "https://repo.r-wasm.org/")
+          dir.create("docs/vfs", showWarnings = FALSE)
+          rwasm::add_pkg(c("shiny", "DT", "plotly", "jsonlite", "lubridate", "data.table", "cffdrs", "munsell"))
+          rwasm::make_vfs_library(outdir = "docs/vfs")
 
-      # # ✅ Fail-fast check for WebR Wasm availability
-      # - name: Check WebR (Wasm) package availability
-      #   shell: Rscript {0}
-      #   env:
-      #     WEBR_REPO: ${{ vars.WEBR_REPO }}  # optional override
-      #   run: |
-      #     needed <- c("shiny","DT","plotly","jsonlite","lubridate","data.table","cffdrs","munsell")
-      #     repo <- Sys.getenv("WEBR_REPO")
-      #     if (!nzchar(repo)) repo <- "https://repo.r-wasm.org/"
-      #     contrib <- file.path(repo, "bin/emscripten/contrib")
-      #     ap <- tryCatch(available.packages(contriburl = contrib), error = function(e) NULL)
-      #     if (is.null(ap)) stop("Could not query WebR repo: ", repo)
-      #     missing <- setdiff(needed, rownames(ap))
-      #     if (length(missing)) {
-      #       stop("Missing WebR binaries: ", paste(missing, collapse = ", "),
-      #            "\nBuild them with rwasm or host them in your own repo, then set WEBR_REPO.")
-      #     } else {
-      #       cat("All required WebR binaries found in repo:", repo, "\n")
-      #     }
-
-      # Export Shinylive site
+      # ✅ Export Shinylive site
       - name: Export Shinylive site
         shell: Rscript {0}
-        env:
-          WEBR_REPO: ${{ vars.WEBR_REPO }}
         run: |
-          if (nzchar(Sys.getenv("WEBR_REPO"))) {
-            options(repos = c(WEbr = Sys.getenv("WEBR_REPO"), CRAN = getOption("repos")["CRAN"]))
-          }
           dir.create("docs", showWarnings = FALSE)
           shinylive::export(
-            appdir        = "app",
-            destdir       = "docs",
-            wasm_packages = TRUE,
-            max_filesize  = "200M",
-            template_params = list(
-              title = "Hourly FWI (NG‑CFFDRS)"
-            )
+            appdir = "app",
+            destdir = "docs",
+            template_params = list(title = "Hourly FWI (NG‑CFFDRS)")
           )
           file.create(file.path("docs", ".nojekyll"))
+
+      # ✅ Inject mounting logic into index.html
+      - name: Patch index.html for VFS mounting
+        run: |
+          sed -i '/<\/body>/i \
+<script type="module">\
+import { WebR } from \"./shinylive/webr.mjs\";\
+const webR = new WebR();\
+await webR.init();\
+await webR.evalR(`\
+  webr::mount(\"/webr-lib\", \"/vfs/library.data\")\
+  .libPaths(c(.libPaths(), \"/webr-lib\"))\
+`);\
+</script>' docs/index.html
+
+      # ✅ Compress assets with Brotli
+      - name: Compress assets with Brotli
+        run: |
+          sudo apt-get install -y brotli
+          find docs -type f \( -name "*.js" -o -name "*.wasm" -o -name "*.css" \) -exec brotli --force {} \;
 
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3

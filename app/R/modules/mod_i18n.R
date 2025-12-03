@@ -188,17 +188,20 @@ mod_i18n_server <- function(id, session_title = TRUE) {
     })
 
     # First-load modal (same keys as the Help button)
-    observe({
-      showModal(
-        modalDialog(
-          title = tr("modal_title"),
-          HTML(tr("modal_body_html")), # loads external HTML transparently
-          easyClose = FALSE,
-          footer = modalButton(tr("modal_close")),
-          size = "l" # actual width/height controlled by CSS in the HTML
+    observeEvent(TRUE,
+      {
+        showModal(
+          modalDialog(
+            title = tr("modal_title"),
+            HTML(tr("modal_body_html")), # loads external HTML transparently
+            easyClose = FALSE,
+            footer = modalButton(tr("modal_close")),
+            size = "l" # actual width/height controlled by CSS in the HTML
+          )
         )
-      )
-    })
+      },
+      once = TRUE
+    )
 
     return(list(
       lang = lang,
