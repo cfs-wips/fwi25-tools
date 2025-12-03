@@ -79,16 +79,16 @@ mod_upload_server <- function(id, tr, lang) {
     raw_file <- reactive({
       req(file_fp())
       tryCatch(
-        data.table::fread(file_fp(),
+        na.omit(data.table::fread(file_fp(),
           sep = ",", na.strings = c("NA", "NaN", "null", ""),
           header = isTRUE(input$has_header), blank.lines.skip = TRUE
-        ),
+        )),
         error = function(e) {
-          utils::read.csv(file_fp(),
+          na.omit(utils::read.csv(file_fp(),
             header = isTRUE(input$has_header),
             na.strings = c("NA", "NaN", "null", ""), check.names = FALSE,
             stringsAsFactors = FALSE, blank.lines.skip = TRUE
-          )
+          ))
         }
       )
     })
