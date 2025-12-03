@@ -80,6 +80,7 @@ jobs:
 
       # ✅ Inject mounting logic into index.html
       - name: Patch index.html for VFS mounting
+        shell: bash
         run: |
           cat <<'EOF' >> docs/index.html
 <script type="module">
