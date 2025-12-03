@@ -57,11 +57,12 @@ jobs:
             cffdrs
             munsell
 
-      # ✅ Prebundle WASM packages using rwasm
+      # ✅ Prebundle WASM packages using rwasm from GitHub
       - name: Prebundle WASM packages
         shell: Rscript {0}
         run: |
-          install.packages("rwasm", repos = "https://repo.r-wasm.org/")
+          install.packages("remotes")
+          remotes::install_github("r-wasm/rwasm")
           dir.create("docs/vfs", showWarnings = FALSE)
           rwasm::add_pkg(c("shiny", "DT", "plotly", "jsonlite", "lubridate", "data.table", "cffdrs", "munsell"))
           rwasm::make_vfs_library(outdir = "docs/vfs")
@@ -96,7 +97,9 @@ jobs:
 
       # ✅ Compress assets with Brotli
       - name: Compress assets with Brotli
+        shell: bash
         run: |
+          sudo apt-get update -y
           sudo apt-get install -y brotli
           find docs -type f \( -name "*.js" -o -name "*.wasm" -o -name "*.css" \) -exec brotli --force {} \;
 
