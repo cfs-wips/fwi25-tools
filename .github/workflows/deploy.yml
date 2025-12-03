@@ -46,6 +46,7 @@ jobs:
             any::data.table
             any::cffdrs
             any::munsell
+            any::remotes
           needs: |
             shinylive
             shiny
@@ -56,13 +57,15 @@ jobs:
             data.table
             cffdrs
             munsell
+            remotes
 
       # ✅ Prebundle WASM packages using rwasm from GitHub
       - name: Prebundle WASM packages
         shell: Rscript {0}
         run: |
-          install.packages("remotes")
+          library(remotes)
           remotes::install_github("r-wasm/rwasm")
+          dir.create("docs", showWarnings = FALSE)
           dir.create("docs/vfs", showWarnings = FALSE)
           rwasm::add_pkg(c("shiny", "DT", "plotly", "jsonlite", "lubridate", "data.table", "cffdrs", "munsell"))
           rwasm::make_vfs_library(outdir = "docs/vfs")
