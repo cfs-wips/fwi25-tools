@@ -80,17 +80,18 @@ jobs:
 
       # ✅ Inject mounting logic into index.html
       - name: Patch index.html for VFS mounting
-        run: |
-          sed -i '/<\/body>/i \
-<script type="module">\
-import { WebR } from \"./shinylive/webr.mjs\";\
-const webR = new WebR();\
-await webR.init();\
-await webR.evalR(`\
-  webr::mount(\"/webr-lib\", \"/vfs/library.data\")\
-  .libPaths(c(.libPaths(), \"/webr-lib\"))\
-`);\
-</script>' docs/index.html
+      run: |
+        cat <<'EOF' >> docs/index.html
+<script type="module">
+import { WebR } from "./shinylive/webr.mjs";
+const webR = new WebR();
+await webR.init();
+await webR.evalR(`
+  webr::mount("/webr-lib", "/vfs/library.data")
+  .libPaths(c(.libPaths(), "/webr-lib"))
+`);
+</script>
+EOF
 
       # ✅ Compress assets with Brotli
       - name: Compress assets with Brotli
