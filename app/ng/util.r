@@ -6,8 +6,8 @@ library(lubridate)
 #'
 #' @param data          data to check
 #' @return              whether each entry in data is 1 unit from the next entry
-is_sequential <- function(data,units) {
-  v <- na.omit(unique(difftime(data,data.table::shift(data, 1),units=units)))
+is_sequential <- function(data, units) {
+  v <- na.omit(unique(difftime(data, data.table::shift(data, 1), units = units)))
   return(length(data) == 1 || (1 == v[[1]] && length(v) == 1))
 }
 
@@ -27,9 +27,9 @@ is_sequential <- function(data,units) {
 #' @param df            data to check
 #' @return              whether each entry is 1 day from the next entry
 is_sequential_days <- function(df) {
-  data <- copy(df)
-  colnames(data) <- tolower(colnames(data))
-  return(is_sequential(as.Date(data$date,"days")))
+  # data <- copy(df)
+  # colnames(data) <- tolower(colnames(data))
+  return(is_sequential(as.Date(df$date), "days"))
 }
 
 #' Determine if data is sequential hours
@@ -37,9 +37,9 @@ is_sequential_days <- function(df) {
 #' @param df            data to check
 #' @return              whether each entry is 1 hour from the next entry
 is_sequential_hours <- function(df) {
-  data <- copy(df)
-  colnames(data) <- tolower(colnames(data))
-  return(is_sequential(as.POSIXct(df$timestamp),"hours"))
+  # data <- copy(df)
+  # colnames(data) <- tolower(colnames(data))
+  return(is_sequential(as.POSIXct(df$timestamp), "hours"))
 }
 
 #' Find specific humidity
@@ -134,7 +134,7 @@ get_sunlight <- function(dt, get_solrad = FALSE) {
     df_all[, cos_zenith := cos(zenith)]
     df_all[, vpd := 6.11 * (1.0 - rh / 100.0) * exp(17.29 * temp / (temp + 237.3))]
     df_all[, solrad := cos_zenith * 0.92 * (1.0 - exp(-0.22 * vpd))]
-    df_all[solrad < 1e-4, solrad := 0.0]  # always set low values to 0
+    df_all[solrad < 1e-4, solrad := 0.0] # always set low values to 0
 
     cols_sun <- c("solrad", "sunrise", "sunset")
   } else {
@@ -146,7 +146,7 @@ get_sunlight <- function(dt, get_solrad = FALSE) {
   df_result <- df_all[, ..cols]
   df_result[, sunlight_hours := sunset - sunrise]
   return(df_result)
- }
+}
 
 seasonal_curing <- function(julian_date) {
   PERCENT_CURED <- c(

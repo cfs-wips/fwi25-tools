@@ -117,6 +117,7 @@ input[type="date"] {
   width: 100%; padding: .5rem .75rem; font-size: 1rem;
   border: 1px solid #ccc; border-radius: .25rem; background: #fff; color: var(--gcds-text-primary);
 }
+.btn-file-label { pointer-events: none; }
 /* Buttons (limit to Bootstrap buttons; DT buttons are styled below) */
 .btn, .btn-primary {
   background-color: var(--gcds-bg-primary);
@@ -140,6 +141,7 @@ input[type="date"] {
   border-radius:6px;
   background:#fff;
   margin-bottom:1rem;
+  min-height: 98px;
   overflow: visible; /* let DataTables manage its own scroll */
 }
 .gc-card__content { position: relative; }
@@ -150,7 +152,7 @@ input[type="date"] {
 /* Placeholder region used before results are available */
 .gc-placeholder {
   display: flex; align-items: center; justify-content: center;
-  min-height: 280px; width: 100%; flex-direction: column; gap: .5rem;
+  min-height: 220px; width: 100%; flex-direction: column; gap: .5rem;
 }
 .gc-placeholder__text {
   font-size: .95rem; color: var(--gcds-text-secondary, #43474E);
@@ -163,7 +165,7 @@ input[type="date"] {
 }
 /* Keep the card height stable while spinner overlay is visible */
 .gc-card__content:has(.shiny-spinner-output-container .load-container:not(.shiny-spinner-hidden)) .shiny-spinner-output-container {
-  min-height: 260px; /* match placeholder height */
+  min-height: 220px; /* match placeholder height */
   position: relative;
 }
 
@@ -322,7 +324,7 @@ table.dataTable.gc-dt.stripe tbody tr:nth-child(even) { background-color: #fafaf
 
 /* Make sure the output area reserves some space before first draw (optional) */
 .gc-spin-wrap .shiny-bound-output {
-  min-height: 260px; /* harmonize with your placeholder height */
+  min-height: 220px; /* harmonize with your placeholder height */
 }
 
 

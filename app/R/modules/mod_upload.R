@@ -1,20 +1,21 @@
 # R/modules/mod_upload.R
+
 mod_upload_ui <- function(id) {
   ns <- NS(id)
   tagList(
-    # Section title with tooltip + <details> (unchanged)
     h4(id = ns("lbl_upload_csv"), uiOutput(ns("lbl_upload_csv"))),
-
-    # TIGHT: place fileInput and checkbox on one line
     tags$div(
       class = "upload-inline",
       role = "group",
       `aria-labelledby` = ns("lbl_upload_csv"),
-
-      # File input (rendered via server)
-      uiOutput(ns("csv_input_ui")),
-
-      # Checkbox with external label (tooltip) inline
+      # Static file input (no renderUI)
+      fileInput(
+        ns("csv"),
+        label = NULL,
+        buttonLabel = NULL, # We'll override via translation
+        placeholder = NULL,
+        accept = c(".csv", "text/csv")
+      ),
       tags$div(
         class = "upload-checkbox",
         uiOutput(ns("lbl_has_header")),
@@ -24,8 +25,10 @@ mod_upload_ui <- function(id) {
   )
 }
 
-mod_upload_server <- function(id, tr) {
+
+mod_upload_server <- function(id, tr, lang) {
   moduleServer(id, function(input, output, session) {
+    ns <- session$id
     # Rich title
     output$lbl_upload_csv <- renderUI({
       label_with_help_rich(
@@ -36,16 +39,6 @@ mod_upload_server <- function(id, tr) {
       )
     })
 
-    # File input
-    output$csv_input_ui <- renderUI({
-      fileInput(
-        session$ns("csv"),
-        label = NULL,
-        buttonLabel = tr("csv_button_label"),
-        placeholder = tr("csv_place_holder"),
-        accept = c(".csv", "text/csv")
-      )
-    })
 
     # External label + tooltip for checkbox (keeps a11y + avoids [object Object])
     output$lbl_has_header <- renderUI({
@@ -56,6 +49,17 @@ mod_upload_server <- function(id, tr) {
     })
 
 
+    observe({
+      id <- session$ns("csv")
+      session$sendCustomMessage("updateFileInputLabels", list(
+        id = session$ns("csv"), # resolves to "upload-csv-csv"
+        buttonLabel = tr("csv_button_label"),
+        placeholder = tr("csv_place_holder")
+      ))
+    }) |> bindEvent(lang())
+
+
+    # Upload tracking
     upload_id <- reactiveVal(0L)
     observeEvent(input$csv,
       {
@@ -64,34 +68,34 @@ mod_upload_server <- function(id, tr) {
       ignoreInit = TRUE
     )
 
+    # Cache file path
+    file_fp <- reactiveVal(NULL)
+    observeEvent(input$csv, {
+      if (!is.null(input$csv$datapath)) {
+        file_fp(input$csv$datapath)
+      }
+    })
+
     raw_file <- reactive({
-      req(input$csv)
-      dt <- tryCatch(
-        data.table::fread(
-          input$csv$datapath,
-          sep = ",",
-          na.strings = c("NA", "NaN", "null", ""),
-          header = isTRUE(input$has_header),
-          blank.lines.skip = TRUE
-        ),
+      req(file_fp())
+      tryCatch(
+        na.omit(data.table::fread(file_fp(),
+          sep = ",", na.strings = c("NA", "NaN", "null", ""),
+          header = isTRUE(input$has_header), blank.lines.skip = TRUE
+        )),
         error = function(e) {
-          utils::read.csv(
-            input$csv$datapath,
+          na.omit(utils::read.csv(file_fp(),
             header = isTRUE(input$has_header),
-            na.strings = c("NA", "NaN", "null", ""),
-            check.names = FALSE,
-            stringsAsFactors = FALSE,
-            blank.lines.skip = TRUE
-          )
+            na.strings = c("NA", "NaN", "null", ""), check.names = FALSE,
+            stringsAsFactors = FALSE, blank.lines.skip = TRUE
+          ))
         }
       )
-      # Drop all-NA rows
-      dt[rowSums(is.na(dt)) < ncol(dt)]
     })
 
     return(list(
       raw_file = raw_file,
-      cols = reactive(if (is.null(input$csv)) character(0) else names(raw_file())),
+      cols = reactive(if (is.null(file_fp())) character(0) else names(raw_file())),
       csv_name = reactive(if (is.null(input$csv)) "results" else input$csv$name),
       upload_id = upload_id
     ))

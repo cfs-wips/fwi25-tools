@@ -1,0 +1,122 @@
+# util_vectorized.R
+# Vectorized utilities with minimal lubridate usage.
+
+library(data.table)
+
+#' Determine if data is sequential at intervals of 1 unit
+#'
+#' @param data          data to check
+#' @return              whether each entry in data is 1 unit from the next entry
+is_sequential <- function(data, units) {
+  v <- na.omit(unique(difftime(data, data.table::shift(data, 1), units = units)))
+  return(length(data) == 1 || (1 == v[[1]] && length(v) == 1))
+}
+
+is_sequential_days <- function(df) {
+  # data <- copy(df)
+  # colnames(data) <- tolower(colnames(data))
+  return(is_sequential(as.Date(df$date), "days"))
+}
+
+#' Determine if data is sequential hours
+#'
+#' @param df            data to check
+#' @return              whether each entry is 1 hour from the next entry
+is_sequential_hours <- function(df) {
+  # data <- copy(df)
+  # colnames(data) <- tolower(colnames(data))
+  return(is_sequential(as.POSIXct(df$timestamp), "hours"))
+}
+
+# Specific humidity (g/kg)
+find_q <- function(temp, rh) {
+  svp <- 6.108 * exp(17.27 * temp / (temp + 237.3))
+  vp <- svp * rh / 100.0
+  217 * vp / (273.17 + temp)
+}
+
+# Relative humidity from specific humidity
+find_rh <- function(q, temp) {
+  cur_vp <- (273.17 + temp) * q / 217
+  100 * cur_vp / (6.108 * exp(17.27 * temp / (temp + 237.3)))
+}
+
+# Day-of-year (no leap year handling)
+julian <- function(mon, day) {
+  month <- c(0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365)
+  month[as.integer(mon)] + as.integer(day)
+}
+
+# Solar & sunlight – vectorized per-day calculations
+get_sunlight_v <- function(dt, get_solrad = FALSE) {
+  colnames(dt) <- tolower(colnames(dt))
+  cols_day <- c("lat", "long", "date", "timezone")
+  cols_req <- c("lat", "long", "timezone", "timestamp")
+  if (get_solrad) cols_req <- c(cols_req, "temp", "rh")
+  for (n in cols_req) stopifnot(n %in% colnames(dt))
+
+  df_copy <- copy(dt)
+  df_copy[, date := as.Date(timestamp)]
+  df_stn_dates <- unique(df_copy[, ..cols_day])
+  df_dates <- unique(df_stn_dates[, .(date)])
+  df_dates[, jd := julian(format(date, "%m"), format(date, "%d"))]
+
+  dechour <- 12.0
+  df_dates[, fracyear := 2.0 * pi / 365.0 * (jd - 1.0 + (dechour - 12.0) / 24.0)]
+  df_dates[, eqtime := 229.18 * (0.000075 +
+    0.001868 * cos(fracyear) - 0.032077 * sin(fracyear) -
+    0.014615 * cos(2.0 * fracyear) - 0.040849 * sin(2.0 * fracyear))]
+  df_dates[, decl := 0.006918 -
+    0.399912 * cos(fracyear) + 0.070257 * sin(fracyear) -
+    0.006758 * cos(fracyear * 2.0) + 0.000907 * sin(fracyear * 2.0) -
+    0.002697 * cos(fracyear * 3.0) + 0.00148 * sin(fracyear * 3.0)]
+  df_dates[, zenith := 90.833 * pi / 180.0]
+
+  # Merge lat/long/timezone
+  df_dates <- merge(df_stn_dates, df_dates, by = c("date"))
+  df_dates[, timeoffset := eqtime + 4 * long - 60 * timezone]
+  df_dates[, x_tmp := cos(zenith) / (cos(lat * pi / 180.0) * cos(decl)) -
+    tan(lat * pi / 180.0) * tan(decl)]
+  df_dates[, x_tmp := pmax(-1, pmin(1, x_tmp))]
+  df_dates[, halfday := 180.0 / pi * acos(x_tmp)]
+  df_dates[, sunrise := (720.0 - 4.0 * (long + halfday) - eqtime) / 60 + timezone]
+  df_dates[, sunset := (720.0 - 4.0 * (long - halfday) - eqtime) / 60 + timezone]
+
+  df_all <- merge(df_copy, df_dates, by = cols_day)
+
+  # Solar radiation per hour if requested
+  if (get_solrad) {
+    df_all[, hr := as.integer(format(timestamp, "%H"))]
+    df_all[, tst := as.numeric(hr) * 60.0 + timeoffset]
+    df_all[, hourangle := tst / 4 - 180]
+    df_all[, zenith := acos(sin(lat * pi / 180) * sin(decl) + cos(lat * pi / 180) * cos(decl) * cos(hourangle * pi / 180))]
+    df_all[, zenith := pmin(pi / 2, zenith)]
+    df_all[, cos_zenith := cos(zenith)]
+    df_all[, vpd := 6.11 * (1.0 - rh / 100.0) * exp(17.29 * temp / (temp + 237.3))]
+    df_all[, solrad := cos_zenith * 0.92 * (1.0 - exp(-0.22 * vpd))]
+    df_all[solrad < 1e-4, solrad := 0.0]
+    cols_sun <- c("solrad", "sunrise", "sunset")
+  } else {
+    cols_sun <- c("sunrise", "sunset")
+  }
+
+  cols <- c(names(dt), cols_sun)
+  df_result <- df_all[, ..cols]
+  df_result[, sunlight_hours := sunset - sunrise]
+  df_result
+}
+
+# Seasonal curing (vectorized)
+seasonal_curing <- function(julian_date) {
+  PERCENT_CURED <- c(
+    96.0, 96.0, 96.0, 96.0, 96.0, 96.0, 96.0, 96.0, 95.0, 93.0,
+    92.0, 90.5, 88.4, 84.4, 78.1, 68.7, 50.3, 32.9, 23.0, 22.0,
+    21.0, 20.0, 25.7, 35.0, 43.0, 49.8, 60.0, 68.0, 72.0, 75.0,
+    78.9, 86.0, 96.0, 96.0, 96.0, 96.0, 96.0, 96.0
+  )
+  jd_class <- (julian_date %/% 10) + 1
+  first <- PERCENT_CURED[pmin(pmax(jd_class, 1), length(PERCENT_CURED))]
+  last <- PERCENT_CURED[pmin(pmax(jd_class + 1, 1), length(PERCENT_CURED))]
+  period_frac <- (julian_date %% 10) / 10.0
+  first + (last - first) * period_frac
+}

@@ -30,9 +30,10 @@ mod_results_table_ui <- function(id) {
         div(
           class = "gc-spin-wrap",
           DT::DTOutput(ns("tbl"), width = "100%"),
-          div(class = "gc-spin-overlay",
-              div(class = "gc-spinner", `aria-hidden` = "true"),
-              span(class = "sr-only", "Loading…")
+          div(
+            class = "gc-spin-overlay",
+            div(class = "gc-spinner", `aria-hidden` = "true"),
+            span(class = "sr-only", "Loading…")
           )
         )
       )
@@ -329,13 +330,12 @@ mod_results_table_server <- function(id, tr, dt_i18n, results, tz_reactive,
         ts_utc = if ("timestamp" %in% names(df) && inherits(df$timestamp, "POSIXt")) df$timestamp else NA
       )
       out
-    })
+    }) |> bindCache(results(), tz_reactive(), ignore_dst_reactive())
 
     # ---- Render DT ----
     output$tbl <- DT::renderDT(
       {
         df <- table_data()
-
         # DataTables callback ensures column widths re-sync after init/draw/resize.
         cb <- DT::JS("
         var tbl = table;          // DataTables API instance

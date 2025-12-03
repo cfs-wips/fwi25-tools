@@ -4,12 +4,18 @@
     "running_hfwi_modal": "Running HFWI… This can take a moment on first run.",
     "upload_csv": "Upload weather CSV",
     "csv_has_header": "CSV has header",
+    "tt_has_header": "CSV has header",
     "csv_button_label": "Browse...",
     "csv_place_holder": "No file selected",
-
+    "inputs_view_label": "View",
+    "inputs_view_raw": "Raw",
+    "inputs_view_hourly": "Hourly",
+    "err_no_raw": "No raw data available",
     "lat_label": "Latitude (°)",
     "lon_label": "Longitude (°)",
-
+    "hint_upload_to_view": "Upload a CSV to view.",
+    "hint_upload_and_run": "Upload a CSV and click",
+    "hint_generate_tables": "to generate tables.",
     "column_mapping": "Column mapping",
     "mapping_help": "Map your columns to what NG–CFFDRS expects. Provide either a single Date–Time column, or Year/Month/Day/Hour.",
     "col_datetime": "Date–Time (optional)",
@@ -37,8 +43,8 @@
     "tt_col_rh": "Relative humidity in percent (0–100).",
     "tt_col_ws": "Wind speed in km/h.",
     "tt_col_rain": "Hourly precipitation in mm.",
-    "tt_col_lat": "Latitude in decimal degrees (negative for south).",
-    "tt_col_lon": "Longitude in decimal degrees (negative for west).",
+    "tt_manual_lat": "Latitude in decimal degrees (negative for south).",
+    "tt_manual_lon": "Longitude in decimal degrees (negative for west).",
     "tt_col_date": "Optional. Select the column containing calendar dates (e.g., 2024-05-01 or 05/01/2024). Leave blank if you provide Date–Time or Year/Month/Day/Hour.",
     "tt_col_time": "Optional. Select the column containing times (e.g., 13:00, 1:00 PM, or 13.5 for 13:30). Leave blank if you provide Date–Time or Year/Month/Day/Hour.",
     "tt_col_solrad": "Optional. Solar shortwave radiation (e.g., W/m² or MJ/m²/h). If mapped, it will be passed through to the hFWI input table.",
@@ -192,9 +198,14 @@
     "fr": "Exécution de HFWI… Cela peut prendre un moment lors de la première exécution.",
     "upload_csv": "Téléverser le fichier CSV météo",
     "csv_has_header": "Le CSV comporte une ligne d’en‑tête",
+    "tt_has_header": "Le CSV comporte une ligne d’en‑tête",
     "csv_button_label": "Parcourir...",
     "csv_place_holder": "Aucun fichier sélectionné",
-
+    "inputs_view_label": "Vue",
+    "inputs_view_raw": "Brut",
+    "inputs_view_hourly": "Horaire",
+    "err_no_raw": "Aucune donnée brute disponible",
+    "err_no_hourly": "Aucune donnée horaire disponible",
     "lat_label": "Latitude (°)",
     "lon_label": "Longitude (°)",
 
@@ -215,7 +226,9 @@
     "col_date": "Colonne de date (Optionnel)",
     "col_time": "Colonne d’heure (Optionnel)",
     "col_solrad": "Rayonnement solaire (Optionnel)",
-
+    "hint_upload_to_view": "Téléversez un CSV pour afficher.",
+    "hint_upload_and_run": "Téléversez un CSV et cliquez sur",
+    "hint_generate_tables": "pour générer les tableaux.",
     "tt_col_datetime": "Une seule date‑heure locale ou ISO‑8601 avec « Z »/décalage UTC. Si une zone/décalage explicite est présent, il sera respecté.",
     "tt_col_id": "Identifiant de station (converti en texte).",
     "tt_col_year": "Année (ex. 2025). À utiliser si aucune colonne Date‑heure unique.",
@@ -226,12 +239,12 @@
     "tt_col_rh": "Humidité relative en pourcentage (0–100).",
     "tt_col_ws": "Vitesse du vent en km/h.",
     "tt_col_rain": "Précipitations horaires en mm.",
-    "tt_col_lat": "Latitude en degrés décimaux (négatif pour sud).",
-    "tt_col_lon": "Longitude en degrés décimaux (négatif pour ouest).",
+    "tt_manual_lat": "Latitude en degrés décimaux (négatif pour sud).",
+    "tt_manual_lon": "Longitude en degrés décimaux (négatif pour ouest).",
     "tt_col_date": "Optionnel. Sélectionnez la colonne qui contient les dates (p. ex., 2024‑05‑01 ou 01/05/2024). Laissez vide si vous fournissez Date‑heure ou Année/Mois/Jour/Heure.",
     "tt_col_time": "Optionnel. Sélectionnez la colonne qui contient les heures (p. ex., 13:00, 13 h ou 13,5 pour 13:30). Laissez vide si vous fournissez Date‑heure ou Année/Mois/Jour/Heure.",
     "tt_col_solrad": "Optionnel. Rayonnement solaire (p. ex., W/m² ou MJ/m²/h). S’il est cartographié, il sera transmis au tableau d’entrée pour hFWI.",
-
+    
     "time_zone": "Fuseau horaire",
     "tz_fixed_one": "Utiliser un seul fuseau horaire pour toutes les lignes",
     "tz_auto_infer": "Déduire un fuseau horaire à partir de la latitude/longitude",
@@ -337,7 +350,7 @@
     "dt_pag_prev": "Précédent",
     "dt_pag_next": "Suivant",
     "dt_pag_last": "Dernier",
-
+    
     "aliases_short": {
       "ffmc": "FFMC",
       "dmc": "DMC",
