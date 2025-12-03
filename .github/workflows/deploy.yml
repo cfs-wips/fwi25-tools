@@ -46,7 +46,6 @@ jobs:
             any::data.table
             any::cffdrs
             any::munsell
-            any::remotes
           needs: |
             shinylive
             shiny
@@ -57,20 +56,23 @@ jobs:
             data.table
             cffdrs
             munsell
-            remotes
 
-      # ✅ Prebundle WASM packages using rwasm from GitHub
+      # ✅ Prebundle WASM packages using rwasm (install from GitHub with token)
       - name: Prebundle WASM packages
         shell: Rscript {0}
+        env:
+          GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          library(remotes)
-          remotes::install_github("r-wasm/rwasm")
-          dir.create("docs", showWarnings = FALSE)
+          if (!requireNamespace("pak", quietly = TRUE)) install.packages("pak")
+          pak::pkg_install("r-wasm/rwasm")  # uses GITHUB_PAT for auth
           dir.create("docs/vfs", showWarnings = FALSE)
-          rwasm::add_pkg(c("shiny", "DT", "plotly", "jsonlite", "lubridate", "data.table", "cffdrs", "munsell"))
+          rwasm::add_pkg(c(
+            "shiny", "DT", "plotly", "jsonlite", "lubridate",
+            "data.table", "cffdrs", "munsell"
+          ))
           rwasm::make_vfs_library(outdir = "docs/vfs")
 
-      # ✅ Export Shinylive site
+      # ✅ Export Shinylive site (no wasm_packages = TRUE since we prebundle)
       - name: Export Shinylive site
         shell: Rscript {0}
         run: |
@@ -82,23 +84,27 @@ jobs:
           )
           file.create(file.path("docs", ".nojekyll"))
 
-      # ✅ Inject mounting logic into index.html
+      # ✅ Insert mounting script before </body> (safer than appending)
       - name: Patch index.html for VFS mounting
         shell: bash
         run: |
-          cat <<'EOF' >> docs/index.html
-          <script type="module">
-          import { WebR } from "./shinylive/webr.mjs";
-          const webR = new WebR();
-          await webR.init();
-          await webR.evalR(`
-            webr::mount("/webr-lib", "/vfs/library.data")
-            .libPaths(c(.libPaths(), "/webr-lib"))
-          `);
-          </script>
-          EOF
+          awk '
+            /<\/body>/ {
+              print "<script type=\"module\">"
+              print "import { WebR } from \"./shinylive/webr.mjs\";"
+              print "const webR = new WebR();"
+              print "await webR.init();"
+              print "await webR.evalR(`"
+              print "  webr::mount(\"/webr-lib\", \"/vfs/library.data\")"
+              print "  .libPaths(c(.libPaths(), \"/webr-lib\"))"
+              print "`);"
+              print "</script>"
+            }
+            { print }
+          ' docs/index.html > docs/index.patched.html
+          mv docs/index.patched.html docs/index.html
 
-      # ✅ Compress assets with Brotli
+      # ✅ Compress assets with Brotli (smaller payloads, faster loads)
       - name: Compress assets with Brotli
         shell: bash
         run: |
