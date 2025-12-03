@@ -1,6 +1,6 @@
 options(fwi.debug_times = FALSE)
 options(shiny.bindcache.default = "app")
-reactlog::reactlog_enable()
+
 library(shiny)
 library(munsell)
 
