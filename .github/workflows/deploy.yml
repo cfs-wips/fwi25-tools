@@ -1,5 +1,5 @@
 
-name: Build & Deploy Shinylive app to GitHub Pages
+name: Build & Deploy Shinylive app with VFS to GitHub Pages
 
 on:
   workflow_dispatch:
@@ -9,22 +9,76 @@ permissions:
   pages: write
   id-token: write
 
+# Avoid overlapping runs; cancel older ones to save minutes
 concurrency:
-  group: "pages"
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    # Single source of truth for your package list (used by hash guard + build-rwasm)
+    env:
+      PACKAGES: |
+        shinylive
+        shiny
+        DT
+        plotly
+        jsonlite
+        lubridate
+        data.table
+        cffdrs
+        munsell
+        r-wasm/shiny@8f8c14571c3ed3490e990ca49cdedf083c945519
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        # v4 is the recommended tag for checkout. [3](https://hatchjs.com/gzip-stdin-has-more-than-one-entry-rest-ignored/)
 
+      # ---- Hash guard: fingerprint the package list and restore docs/vfs cache ----
+      - name: Compute VFS fingerprint
+        id: pkgfp
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .vfs-cache
+          printf "%s\n" "${PACKAGES}" > .vfs-cache/packages.txt
+          sha256sum .vfs-cache/packages.txt | cut -d ' ' -f1 > .vfs-cache/packages.sha
+          echo "hash=$(cat .vfs-cache/packages.sha)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore VFS cache (docs/vfs)
+        id: vfs-cache
+        uses: actions/cache@v4
+        with:
+          path: docs/vfs
+          key: vfs-${{ runner.os }}-${{ steps.pkgfp.outputs.hash }}
+          restore-keys: |
+            vfs-${{ runner.os }}-
+        
+      # ---- Build VFS only when cache miss ----
+      - name: Build VFS library (webR packages)
+        if: steps.vfs-cache.outputs.cache-hit != 'true'
+        uses: r-wasm/actions/build-rwasm@v2
+        with:
+          packages: ${{ env.PACKAGES }}
+          out-dir: docs/vfs
+          out-name: library.data
+        
+      - name: Verify VFS output
+        run: |
+          ls -la docs/vfs || (echo "Missing docs/vfs" && exit 1)
+          test -f docs/vfs/library.data || (echo "Missing library.data" && exit 1)
+          test -f docs/vfs/library.js.metadata || (echo "Missing library.js.metadata" && exit 1)
+
+      # ---- Shinylive export (builds your static app into docs/) ----
       - name: Setup R
         uses: r-lib/actions/setup-r@v2
         with:
           use-public-rspm: true
-
+       
       - name: Cache R packages
         uses: actions/cache@v4
         with:
@@ -32,97 +86,73 @@ jobs:
           key: ${{ runner.os }}-r-${{ hashFiles('**/*.R', '**/*.Rmd', '**/DESCRIPTION', '**/renv.lock') }}
           restore-keys: |
             ${{ runner.os }}-r-
-
-      - name: Install R packages
+        
+      - name: Install R packages for export
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
           extra-packages: |
             any::shinylive
             any::shiny
-            any::DT
-            any::plotly
-            any::jsonlite
-            any::lubridate
-            any::data.table
-            any::cffdrs
-            any::munsell
           needs: |
             shinylive
             shiny
-            DT
-            plotly
-            jsonlite
-            lubridate
-            data.table
-            cffdrs
-            munsell
-
-      # ✅ Prebundle WASM packages using rwasm (install from GitHub with token)
-      - name: Prebundle WASM packages
-        shell: Rscript {0}
-        env:
-          GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if (!requireNamespace("pak", quietly = TRUE)) install.packages("pak")
-          pak::pkg_install("r-wasm/rwasm")  # uses GITHUB_PAT for auth
-          dir.create("docs/vfs", showWarnings = FALSE)
-          rwasm::add_pkg(c(
-            "shiny", "DT", "plotly", "jsonlite", "lubridate",
-            "data.table", "cffdrs", "munsell"
-          ))
-          rwasm::make_vfs_library(outdir = "docs/vfs")
-
-      # ✅ Export Shinylive site (no wasm_packages = TRUE since we prebundle)
+        
       - name: Export Shinylive site
         shell: Rscript {0}
         run: |
           dir.create("docs", showWarnings = FALSE)
           shinylive::export(
-            appdir = "app",
+            appdir = "app",  # <-- change if your app folder isn't "app"
             destdir = "docs",
             template_params = list(title = "Hourly FWI (NG‑CFFDRS)")
           )
           file.create(file.path("docs", ".nojekyll"))
-
-      # ✅ Insert mounting script before </body> (safer than appending)
+        
+      # ---- Inject JS to mount the VFS and set .libPaths() at runtime ----
       - name: Patch index.html for VFS mounting
         shell: bash
         run: |
-          awk '
-            /<\/body>/ {
-              print "<script type=\"module\">"
-              print "import { WebR } from \"./shinylive/webr.mjs\";"
-              print "const webR = new WebR();"
-              print "await webR.init();"
-              print "await webR.evalR(`"
-              print "  webr::mount(\"/webr-lib\", \"/vfs/library.data\")"
-              print "  .libPaths(c(.libPaths(), \"/webr-lib\"))"
-              print "`);"
-              print "</script>"
-            }
-            { print }
-          ' docs/index.html > docs/index.patched.html
-          mv docs/index.patched.html docs/index.html
+          set -euo pipefail
+          IDX="docs/index.html"
+          test -f "$IDX" || (echo "index.html not found in docs/" && exit 1)
 
-      # ✅ Compress assets with Brotli (smaller payloads, faster loads)
-      - name: Compress assets with Brotli
-        shell: bash
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y brotli
-          find docs -type f \( -name "*.js" -o -name "*.wasm" -o -name "*.css" \) -exec brotli --force {} \;
+          if ! grep -q "data-injected-webr-vfs" "$IDX"; then
+            awk '
+              /<\/body>/ {
+                print "<script type=\"module\" data-injected-webr-vfs=\"true\">"
+                print "  import { WebR } from \"./shinylive/webr.mjs\";"
+                print "  const webR = new WebR();"
+                print "  await webR.init();"
+                print "  await webR.mount(\"/webr-lib\", \"vfs/library.data\");"
+                print "  await webR.evalR(`.libPaths(c(.libPaths(), \"/webr-lib\"))`);"
+                print "  // Optionally pre-load packages immediately:"
+                print "  // await webR.evalR(`library(shiny); library(DT); library(plotly); library(jsonlite); library(lubridate); library(data.table); library(cffdrs); library(munsell)`);"
+                print "</script>"
+                print
+                next
+              }
+              { print }
+            ' "$IDX" > "${IDX}.patched"
+            mv "${IDX}.patched" "$IDX"
+          else
+            echo "VFS bootstrap already injected; skipping."
+          fi
+        # Mounting and adjusting .libPaths() in webR follows official docs. [8](https://github.com/r-wasm/actions)
 
+      # ---- Upload Pages artifact (official pairing with deploy-pages@v4) ----
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs
-
+        
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
