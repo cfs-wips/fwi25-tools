@@ -57,8 +57,6 @@ ui <- fluidPage(
         var card = el.closest('.gc-card'); if(card) card.classList.remove('busy');
       });
     ")),
-    tags$link(rel = "stylesheet", href = "https://cdn.jsdelivr.net/npm/@cdssnc/gcds-fonts@1.0.3/dist/gcds-fonts.css"),
-    tags$link(rel = "stylesheet", href = "https://cdn.design-system.alpha.canada.ca/cdn/gcds/alpha/0.13.0/tokens.css"),
     tags$link(rel = "stylesheet", type = "text/css", href = "gc_custom_style.css"),
     tags$style(HTML("
       .gc-card{overflow-x:auto;padding:.5rem 1rem;border:1px solid var(--gcds-border-default,#7D828B);border-radius:6px;background:#fff;margin-bottom:1rem;}
