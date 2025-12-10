@@ -1,36 +1,6 @@
 # R/modules/mod_i18n.R
 # Centralized translations loaded from external JSON + modal body from HTML files.
 
-# deps
-requireNamespace("jsonlite", quietly = TRUE)
-
-# ---- load i18n JSON once (app start) ----
-.load_i18n_json <- function(paths = c("www/i18n.json", "i18n/i18n.json")) {
-  for (p in paths) {
-    if (file.exists(p)) {
-      x <- jsonlite::fromJSON(p, simplifyVector = FALSE)
-      if (is.list(x) && length(x) && all(c("en", "fr") %in% names(x))) {
-        return(x)
-      }
-    }
-  }
-  warning("i18n.json not found or invalid; falling back to empty labels.")
-  list(en = list(), fr = list())
-}
-
-.read_help_html <- function(lang = "en",
-                            files = c(en = "www/help_en.html", fr = "www/help_fr.html"),
-                            fallback = "<p>Help file not found.</p>") {
-  f <- if (identical(lang, "fr")) files[["fr"]] else files[["en"]]
-  if (!is.null(f) && file.exists(f)) {
-    paste(readLines(f, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
-  } else {
-    fallback
-  }
-}
-
-i18n_labels <- .load_i18n_json()
-
 get_i18n <- function(key, lang = "en") {
   if (!lang %in% names(i18n_labels)) lang <- "en"
   i18n_labels[[lang]][[key]]

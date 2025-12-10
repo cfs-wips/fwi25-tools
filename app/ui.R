@@ -9,86 +9,18 @@ downloadLink_sl <- function(...) {
   tag
 }
 
-for (f in list.files("R/modules", pattern = "\\.R$", full.names = TRUE)) {
-  source(f, local = TRUE)
-}
+# for (f in list.files("R/modules", pattern = "\\.R$", full.names = TRUE)) {
+#   source(f, local = TRUE)
+# }
 
 ui <- fluidPage(
   title = NULL,
-  # shinyjs::useShinyjs(),
   tags$head(
     tags$title("FWI2025"),
-    # Accessibility and dynamic title
-    tags$script(HTML("
-      Shiny.addCustomMessageHandler('set-title', function(msg){
-        try{
-          document.title = msg;
-          if(window.parent && window.parent !== window){
-            window.parent.postMessage({type:'set-title', title: msg}, '*');
-          }
-        }catch(e){}
-      });
-    ")),
-    tags$script(HTML("
-      Shiny.addCustomMessageHandler('set-aria-labels', function(msg){
-        try{
-          if(msg && msg.app) document.getElementById('main-content')?.setAttribute('aria-label', msg.app);
-          if(msg && msg.tabs) document.getElementById('tabs-region')?.setAttribute('aria-label', msg.tabs);
-        } catch(e){}
-      });
-    ")),
-    tags$script(HTML("
-      Shiny.addCustomMessageHandler('mappingSetDisabled', function(msg) {
-        var el = document.getElementById(msg.id);
-        if (!el) return;
-        var disabled = !!msg.disabled;
-        el.setAttribute('aria-disabled', disabled ? 'true' : 'false');
-        el.style.pointerEvents = disabled ? 'none' : 'auto';
-        el.style.opacity = disabled ? '0.6' : '1';
-      });
-    ")),
-    tags$script(HTML("
-      document.addEventListener('shiny:recalculating', function(ev){
-        var el = ev.target; if(!el) return;
-        var card = el.closest('.gc-card'); if(card) card.classList.add('busy');
-      });
-      document.addEventListener('shiny:value', function(ev){
-        var el = ev.target; if(!el) return;
-        var card = el.closest('.gc-card'); if(card) card.classList.remove('busy');
-      });
-    ")),
     tags$link(rel = "stylesheet", type = "text/css", href = "gc_custom_style.css"),
-    tags$style(HTML("
-      .gc-card{overflow-x:auto;padding:.5rem 1rem;border:1px solid var(--gcds-border-default,#7D828B);border-radius:6px;background:#fff;margin-bottom:1rem;}
-      .gc-card .dataTables_wrapper{overflow-x:auto;}
-    ")),
     tags$script(src = "tz.js"),
     tags$script(src = "upload_labels.js"),
-    tags$script(HTML("
-      if(document.readyState === 'complete'){ initializeTZ(); } else { window.addEventListener('load', initializeTZ); }
-      function initializeTZ(){
-        try{
-          var browserTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
-          if(browserTZ && typeof Shiny !== 'undefined'){
-            Shiny.setInputValue('tz_browser', browserTZ, {priority:'event'});
-          }
-        } catch(e){ console.log(e); }
-      }
-      Shiny.addCustomMessageHandler('tz_lookup', function(msg){
-        var tz = tzlookup(msg.lat, msg.lon);
-        Shiny.setInputValue('tz_lookup_result', tz, {priority:'event'});
-      });
-    ")),
-    tags$script(HTML("
-      document.addEventListener('DOMContentLoaded', function(){
-        try { Shiny.setInputValue('__init__', Math.random(), {priority:'event'}); } catch(e){}
-      });
-    ")),
-    tags$script(HTML("
-      Shiny.addCustomMessageHandler('form-reset', function(id){
-        try { document.getElementById(id)?.reset(); } catch(e){}
-      });
-    "))
+    tags$script(src = "app-init.js")
   ),
   mod_i18n_ui("i18n"),
   tags$main(

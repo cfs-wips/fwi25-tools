@@ -134,6 +134,7 @@ input[type="date"] {
 .upload-inline input[type="checkbox"] { margin-top: 0; }
 .upload-inline .btn { margin-bottom: 0; }
 
+
 /* 5) Components (cards, placeholder, help, mini-preview, mapping disabled) */
 .gc-card {
   padding:.5rem 1rem;
@@ -145,7 +146,10 @@ input[type="date"] {
   overflow: visible; /* let DataTables manage its own scroll */
 }
 .gc-card__content { position: relative; }
-.gc-card .dataTables_wrapper { max-width:100%; }
+.gc-card .dataTables_wrapper { 
+  max-width:100%;
+  overflow-x:auto;
+}
 /* NOTE: removed overflow:hidden; allow DT to manage widths for header/body sync */
 /* .gc-card .dataTables_wrapper .dataTables_scroll { overflow:hidden; } */
 
