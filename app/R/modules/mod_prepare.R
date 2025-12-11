@@ -1,75 +1,146 @@
 
-# mod_prepare.R — robust prepare module with hourly-vs-daily detection, gap handling, and daily-noon replacement
+# R/modules/mod_prepare.R
+# Robust prepare module:
+#  - Hourly-vs-daily detection that prefers Y/M/D/H
+#  - Safe datetime handling (strip "(...)" suffixes, never throws)
+#  - Gap fill using daily→hourly synthesis for missing hours
+#  - Optional replace-stream using daily NOON (hr=12) → hourly
+#  - Provenance + timing + lightweight logs
+#  - Case-insensitive column resolver across varied schemas
 
 mod_prepare_server <- function(
     id,
     raw_file,
     mapping,
     tz,
-    diurnal_method_reactive = reactive("BT-default"),
+    diurnal_method_reactive = shiny::reactive("BT-default"),
     notify = TRUE
 ) {
-  moduleServer(id, function(input, output, session) {
+  shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
     
-    # null-coalescing
+    # ---- Utilities -----------------------------------------------------------
     `%||%` <- function(a, b) if (is.null(a) || length(a) == 0) b else a
-    
     emit_toast <- function(text, type = "message", duration = 5) {
-      if (isTRUE(notify)) showNotification(text, type = type, duration = duration)
+      if (isTRUE(notify)) shiny::showNotification(text, type = type, duration = duration)
     }
     
-    # --- Required helpers / dependencies -------------------------------------
-    source("ng/make_minmax.r")  # provides: daily_to_minmax()
-    source("ng/make_hourly.r")  # provides: minmax_to_hourly()
+    # ---- Dependencies (expected to exist) ------------------------------------
+    source("ng/make_minmax.r")  # daily_to_minmax()
+    source("ng/make_hourly.r")  # minmax_to_hourly()
     
-    # Guess an hour-like column if mapping doesn't provide one or if it isn't present
-    guess_hour_col <- function(dt) {
-      cols <- names(dt)
-      name_hits <- grep("^(hour|hr|hh|heure|hora)$", tolower(cols), value = TRUE)
-      check_col <- function(col) {
-        x <- suppressWarnings(as.integer(gsub("[^0-9-]", "", as.character(dt[[col]]))))
-        ok <- sum(!is.na(x) & x >= 0L & x <= 23L)
-        frac <- ok / max(1L, length(x))
-        frac >= 0.80  # at least 80% of values look like hours
-      }
-      for (col in c(name_hits, cols)) {
-        if (check_col(col)) return(col)
+    # Normalize a token (lowercase, remove non-alphanum)
+    .norm <- function(x) gsub("[^a-z0-9]", "", tolower(x))
+    
+    # Helper to safely call mapping$col_*() if present
+    .map_get <- function(fun) {
+      if (is.null(fun)) return(NULL)
+      tryCatch(fun(), error = function(e) NULL)
+    }
+    
+    # Find the first column in dt whose normalized name equals any normalized token
+    .find_col <- function(dt, tokens) {
+      if (is.null(tokens) || !length(tokens)) return(NULL)
+      toks <- unique(tokens[!is.na(tokens) & nzchar(tokens)])
+      if (!length(toks)) return(NULL)
+      nm   <- names(dt)
+      nmn  <- vapply(nm, .norm, "", USE.NAMES = FALSE)
+      toksn<- vapply(toks, .norm, "", USE.NAMES = FALSE)
+      for (t in toksn) {
+        i <- which(nmn == t)
+        if (length(i)) return(nm[i[1]])
       }
       NULL
     }
     
-    # Resolve standard column names via mapping or best-effort detection
-    resolve_cols <- function(dt) {
-      h_map   <- mapping$col_hour()
-      h_guess <- if (is.null(h_map) || !nzchar(h_map) || !(h_map %in% names(dt))) guess_hour_col(dt) else h_map
-      list(
-        id       = if ("id" %in% names(dt)) "id" else NULL,
-        lat      = if ("lat" %in% names(dt)) "lat" else NULL,
-        long     = if ("long" %in% names(dt)) "long" else if ("lon" %in% names(dt)) "lon" else NULL,
-        yr       = mapping$col_year()   %||% "yr",
-        mon      = mapping$col_month()  %||% "mon",
-        day      = mapping$col_day()    %||% "day",
-        hr       = h_guess,  # guessed if mapping not available
-        temp     = mapping$col_temp()   %||% "temp",
-        rh       = mapping$col_rh()     %||% "rh",
-        ws       = mapping$col_ws()     %||% "ws",
-        prec     = mapping$col_rain()   %||% (if ("prec" %in% names(dt)) "prec" else if ("Rain_24" %in% names(dt)) "Rain_24" else if ("rn_1" %in% names(dt)) "rn_1" else NULL),
-        datetime = mapping$col_datetime() %||% NULL,
-        date     = mapping$col_date()     %||% NULL
+    # Guess a datetime column name only if needed (safe)
+    guess_datetime_col <- function(dt) {
+      nm <- names(dt); nmn <- vapply(nm, .norm, "", USE.NAMES = FALSE)
+      wanted <- c("datetime","timestamp","timeanddate","dateandtime","date_time","timelocal","localtime","dt")
+      for (i in seq_along(nm)) {
+        if (nmn[i] %in% wanted) return(nm[i])
+      }
+      # fallback: try character columns that parse well (strip parentheses like "(-6h)")
+      try_formats <- c(
+        "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M",
+        "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M",
+        "%H:%M %Y-%m-%d",    "%H:%M %Y/%m/%d",
+        "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ"
       )
+      safe_parse <- function(x) {
+        x2 <- gsub("\\s*\\([^)]*\\)\\s*$", "", x)
+        tryCatch(suppressWarnings(as.POSIXct(x2, tz = "UTC", tryFormats = try_formats)),
+                 error = function(e) rep(NA_real_, length(x2)))
+      }
+      for (col in nm) {
+        x <- dt[[col]]
+        if (!is.character(x)) next
+        parsed <- safe_parse(x)
+        good_frac <- sum(!is.na(parsed)) / max(1L, length(parsed))
+        hour_var  <- if (all(is.na(parsed))) FALSE else (length(unique(format(parsed, "%H"))) > 1)
+        if (good_frac >= 0.80 && hour_var) return(col)
+      }
+      NULL
     }
     
-    # DST-aware hour checks
-    .count_hour_gaps <- function(ts) { d <- as.numeric(diff(ts), units = "hours"); sum(d > 1 & d != 2) }  # ignore spring-forward
+    # ---- Column resolver (HOTFIX: case-insensitive, schema-first) ------------
+    resolve_cols <- function(dt) {
+      # 1) Prefer schema via common variants, case-insensitive
+      yr  <- .find_col(dt, c(.map_get(mapping$col_year),  "yr", "year"))
+      mon <- .find_col(dt, c(.map_get(mapping$col_month), "mon","month"))
+      day <- .find_col(dt, c(.map_get(mapping$col_day),   "day","date","dom"))
+      hr  <- .find_col(dt, c(.map_get(mapping$col_hour),  "hr","hour","hh"))
+      
+      # 2) Only consider free-form datetime if Y/M/D/H is incomplete
+      datetime <- NULL
+      if (is.null(yr) || is.null(mon) || is.null(day) || is.null(hr)) {
+        datetime <- .find_col(dt, c(.map_get(mapping$col_datetime),
+                                    "datetime","timestamp","timeanddate","dateandtime","date_time"))
+        if (is.null(datetime)) datetime <- guess_datetime_col(dt)
+      }
+      
+      # 3) id + core met vars (robust, case-insensitive)
+      id   <- .find_col(dt, c(.map_get(mapping$col_id), "id","station","stationname","station_name","station name"))
+      lat  <- .find_col(dt, c("lat","latitude"))
+      long <- .find_col(dt, c("long","lon","longitude"))
+      
+      temp <- .find_col(dt, c(.map_get(mapping$col_temp), "temp","temperature"))
+      rh   <- .find_col(dt, c(.map_get(mapping$col_rh),   "rh","relhum","relativehumidity"))
+      ws   <- .find_col(dt, c(.map_get(mapping$col_ws),   "ws","wspd","windspeed","wind"))
+      prec <- .find_col(dt, c(.map_get(mapping$col_prec), "prec","rn_1","rain","rain_24","rain24","p24"))
+      
+      date <- .find_col(dt, c(.map_get(mapping$col_date), "date"))
+      
+      # Debug to console (helps diagnose misclassification)
+      msg <- sprintf("[Prepare][DEBUG] Found cols: id=%s lat=%s long=%s yr=%s mon=%s day=%s hr=%s datetime=%s temp=%s rh=%s ws=%s prec=%s",
+                     id, lat, long, yr, mon, day, hr, datetime, temp, rh, ws, prec)
+      message(msg)
+      
+      list(id=id, lat=lat, long=long, yr=yr, mon=mon, day=day, hr=hr,
+           temp=temp, rh=rh, ws=ws, prec=prec, datetime=datetime, date=date)
+    }
+    
+    # ---- DST-aware checks ----------------------------------------------------
+    .count_hour_gaps <- function(ts) { d <- as.numeric(diff(ts), units = "hours"); sum(d > 1 & d != 2) }  # ignore spring-forward +2
     .count_hour_dups <- function(ts) { d <- as.numeric(diff(ts), units = "hours"); sum(d == 0) }          # fall-back duplicates
     .is_seq_days     <- function(d)  { if (!length(d)) return(FALSE); all(diff(d) == 1) }
     
-    # Convert daily table (single or multi-station) to hourly via your pipeline
+    # Safe ordering by id + timestamp
+    safe_setorder <- function(dt, id_name) {
+      if (!is.null(id_name) && id_name %in% names(dt)) {
+        data.table::setorderv(dt, c(id_name, "timestamp"))
+      } else {
+        data.table::setorderv(dt, "timestamp")
+      }
+    }
+    
+    # ---- Conversions ---------------------------------------------------------
     convert_daily_to_hourly <- function(df, tz_string, diurnal_method) {
       req_cols <- c("yr", "mon", "day", "temp", "rh", "ws", "prec")
-      if (!all(req_cols %in% names(df))) stop("Missing daily columns: ", paste(setdiff(req_cols, names(df)), collapse = ", "))
-      tz_off <- as.integer(format(as.POSIXlt(Sys.time(), tz = tz_string), "%z")) / 100
+      if (!all(req_cols %in% names(df))) {
+        stop("Missing daily columns: ", paste(setdiff(req_cols, names(df)), collapse = ", "))
+      }
+      tz_off <- as.integer(format(as.POSIXct(Sys.time(), tz = tz_string), "%z")) / 100
       
       mm <- try(daily_to_minmax(df[, .(yr, mon, day, temp, rh, ws, prec)]), silent = TRUE)
       if (inherits(mm, "try-error")) stop(paste("daily_to_minmax() failed:", as.character(mm)))
@@ -80,7 +151,7 @@ mod_prepare_server <- function(
       mm$lat  <- if ("lat"  %in% names(df)) df$lat[1]  else NA_real_
       mm$long <- if ("long" %in% names(df)) df$long[1] else NA_real_
       
-      # Build args defensively: add optional params only if supported
+      # Build args (defensive to optional formals)
       fml  <- try(formalArgs(minmax_to_hourly), silent = TRUE)
       args <- list(mm, timezone = tz_off, verbose = FALSE, round_out = NA)
       if (!inherits(fml, "try-error") && "skip_invalid" %in% fml) args$skip_invalid <- TRUE
@@ -116,7 +187,7 @@ mod_prepare_server <- function(
       list(hourly = hourly, tz_off = hourly_list[[1]]$tz_off, logs = logs)
     }
     
-    # Pick representative daily temp/RH (prefer hr==12; otherwise nearest to 12)
+    # Represent a daily row (prefer hr==12 for temp/RH, else nearest)
     pick_daily_representative <- function(day_dt, col_hr, col_temp, col_rh) {
       hr_vals <- suppressWarnings(as.integer(gsub("[^0-9-]", "", as.character(day_dt[[col_hr]]))))
       idx12 <- which(hr_vals == 12L)
@@ -127,7 +198,6 @@ mod_prepare_server <- function(
       )
     }
     
-    # Construct one daily row (yr/mon/day/temp/rh/ws/prec + id/lat/long)
     make_daily_row <- function(day_dt, cols) {
       repv    <- pick_daily_representative(day_dt, cols$hr, cols$temp, cols$rh)
       ws_mean <- if (!is.null(cols$ws) && cols$ws %in% names(day_dt)) mean(suppressWarnings(as.numeric(day_dt[[cols$ws]])), na.rm = TRUE) else NA_real_
@@ -143,7 +213,6 @@ mod_prepare_server <- function(
       )
     }
     
-    # Synthesize a full 24-hour series for one station/day from a daily row
     synthesize_day_hourly <- function(daily_row, tz_string, diurnal_method) {
       mm <- try(daily_to_minmax(daily_row[, .(yr, mon, day, temp, rh, ws, prec)]), silent = TRUE)
       if (inherits(mm, "try-error")) stop(paste("daily_to_minmax() failed:", as.character(mm)))
@@ -153,7 +222,7 @@ mod_prepare_server <- function(
       mm$long <- if ("long" %in% names(daily_row)) daily_row$long[1] else NA_real_
       
       fml  <- try(formalArgs(minmax_to_hourly), silent = TRUE)
-      tz_off <- as.integer(format(as.POSIXlt(Sys.time(), tz = tz_string), "%z")) / 100
+      tz_off <- as.integer(format(as.POSIXct(Sys.time(), tz = tz_string), "%z")) / 100
       args <- list(mm, timezone = tz_off, verbose = FALSE, round_out = NA)
       if (!inherits(fml, "try-error") && "skip_invalid" %in% fml) args$skip_invalid <- TRUE
       if (!inherits(fml, "try-error")) {
@@ -168,7 +237,6 @@ mod_prepare_server <- function(
       hr[]
     }
     
-    # Fill only missing hours (per station/day) using daily→hourly synthesis
     fill_hourly_gaps_with_diurnal <- function(src, tz_string, diurnal_method) {
       dt   <- data.table::as.data.table(src)
       cols <- resolve_cols(dt)
@@ -207,18 +275,20 @@ mod_prepare_server <- function(
         data.table::setkey(stn_dt, timestamp)
         data.table::setkey(syn_all, timestamp)
         
-        # add rows for truly missing timestamps (anti-join; no 'nomatch' with '!')
+        # add rows for truly missing timestamps (anti-join; safe)
         missing_ts <- syn_all[!stn_dt, on = "timestamp"]$timestamp
         if (length(missing_ts)) {
-          stn_dt <- data.table::rbindlist(list(stn_dt, syn_all[J(missing_ts)]), fill = TRUE)
+          stn_dt <- data.table::rbindlist(list(stn_dt, syn_all[data.table::J(missing_ts)]), fill = TRUE)
         }
         
         # fill NA values in overlapping timestamps for core variables
         core_fill <- intersect(c(cols$temp, cols$rh, cols$ws, cols$prec, "temp", "Rh", "Wspd", "prec"), names(stn_dt))
         if (length(core_fill)) {
-          idx <- stn_dt[, .I[Reduce(`|`, lapply(.SD, is.na))], .SDcols = core_fill]
-          if (length(idx)) {
-            stn_dt[idx, (core_fill) := syn_all[.SD$timestamp, on = "timestamp"][, ..core_fill]]
+          na_idx <- stn_dt[, .I[Reduce(`|`, lapply(.SD, is.na))], .SDcols = core_fill]
+          if (length(na_idx)) {
+            na_ts <- stn_dt$timestamp[na_idx]
+            fills <- syn_all[.(na_ts), on = "timestamp", nomatch = 0L]
+            stn_dt[na_idx, (core_fill) := fills[, ..core_fill]]
           }
         }
         
@@ -227,15 +297,10 @@ mod_prepare_server <- function(
       
       out_list <- Map(fill_one_station, stn_list, names(stn_list))
       out <- data.table::rbindlist(out_list, fill = TRUE)
-      if (!is.null(cols$id) && cols$id %in% names(out)) {
-        data.table::setorder(out, get(cols$id), timestamp)
-      } else {
-        data.table::setorder(out, timestamp)
-      }
+      safe_setorder(out, cols$id)
       out[]
     }
     
-    # Replace entire stream: require daily NOON completeness and convert to full hourly
     daily_noon_is_complete <- function(src) {
       dt   <- data.table::as.data.table(src)
       cols <- resolve_cols(dt)
@@ -272,141 +337,111 @@ mod_prepare_server <- function(
       convert_multi_station_daily_to_hourly(daily, tz_string, diurnal_method)$hourly
     }
     
-    # Schema-first detection (+ daily-one-hour generalized) and hourly inference
+    # ---- Detection (HOTFIX: hourly-first, safe datetime) ---------------------
     detect_resolution <- function(df, tz_string) {
       dt <- data.table::as.data.table(df)
-      cols <- names(dt)
+      rc <- resolve_cols(dt)
       reasons <- character()
       
-      dt_col  <- mapping$col_datetime() %||% ""
-      date_col<- mapping$col_date()     %||% ""
-      ycol    <- mapping$col_year()     %||% ""
-      mcol    <- mapping$col_month()    %||% ""
-      dcol    <- mapping$col_day()      %||% ""
-      hcol    <- mapping$col_hour()     %||% ""
+      has_ymd  <- !is.null(rc$yr)  && rc$yr  %in% names(dt) &&
+        !is.null(rc$mon) && rc$mon %in% names(dt) &&
+        !is.null(rc$day) && rc$day %in% names(dt)
+      has_hour <- !is.null(rc$hr)  && rc$hr  %in% names(dt)
+      has_dt   <- !is.null(rc$datetime) && rc$datetime %in% names(dt)
+      has_date <- !is.null(rc$date) && rc$date %in% names(dt)
       
-      # If mapping doesn't give us hour, try to guess it
-      if (!nzchar(hcol) || !(hcol %in% cols)) {
-        hcol_guess <- guess_hour_col(dt)
-        if (!is.null(hcol_guess)) {
-          hcol <- hcol_guess
-          reasons <- c(reasons, sprintf("guessed hour column: '%s'", hcol))
-        }
-      }
-      
-      has_datetime <- nzchar(dt_col)   && dt_col   %in% cols
-      has_hour     <- nzchar(hcol)     && hcol     %in% cols
-      has_date     <- nzchar(date_col) && date_col %in% cols
-      has_ymd      <- all(nzchar(c(ycol,mcol,dcol))) && all(c(ycol,mcol,dcol) %in% cols)
-      
-      # Build date vector early (used for per-day counts)
-      date_vec <- NULL
-      if (has_ymd) {
-        date_vec <- suppressWarnings(as.Date(sprintf("%04d-%02d-%02d", dt[[ycol]], dt[[mcol]], dt[[dcol]])))
-      } else if (has_date) {
-        date_vec <- suppressWarnings(as.Date(dt[[date_col]]))
-      }
-      
-      # Per-day counts by station (if we can form a date)
-      more_than_one_row_per_day <- FALSE
-      if (!is.null(date_vec)) {
+      # 1) HOURLY via Y/M/D/H (preferred; deterministic timestamp)
+      if (has_ymd && has_hour) {
+        hr_vals <- suppressWarnings(as.integer(gsub("[^0-9-]", "", as.character(dt[[rc$hr]]))))
+        dt[, timestamp := suppressWarnings(as.POSIXct(sprintf(
+          "%04d-%02d-%02d %02d:00:00",
+          as.integer(get(rc$yr)), as.integer(get(rc$mon)), as.integer(get(rc$day)), hr_vals
+        ), tz = tz_string))]
+        
+        # Detect disguised daily-one-hour (any fixed hr per day)
+        date_vec <- suppressWarnings(as.Date(sprintf("%04d-%02d-%02d", dt[[rc$yr]], dt[[rc$mon]], dt[[rc$day]])))
         base_dt <- data.table::data.table(
-          id   = if ("id" %in% cols) dt$id else rep("STN", nrow(dt)),
-          date = date_vec
+          id   = if (!is.null(rc$id)) dt[[rc$id]] else rep("STN", nrow(dt)),
+          date = date_vec,
+          hr   = hr_vals
         )
-        per_day <- base_dt[, .(n_row = .N), by = .(id, date)]
-        more_than_one_row_per_day <- any(per_day$n_row > 1L)
-        if (more_than_one_row_per_day) reasons <- c(reasons, "inferred hourly: >1 rows per day")
-      }
-      
-      # --- Decide KIND by schema (hourly-first) ---
-      if (has_datetime || (has_ymd && (has_hour || more_than_one_row_per_day))) {
-        # HOURLY schema
-        kind <- "hourly"
-        
-        # Canonical timestamp for sequential checks (only if we have hour or datetime)
-        if (has_datetime) {
-          data.table::setnames(dt, dt_col, "timestamp", skip_absent = TRUE)
-          if (!inherits(dt$timestamp, "POSIXt")) {
-            dt[, timestamp := suppressWarnings(as.POSIXct(
-              timestamp, tz = tz_string,
-              tryFormats = c(
-                "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M",
-                "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M",
-                "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ"
-              )
-            ))]
-          }
-        } else if (has_hour && has_ymd) {
-          hr_vals <- suppressWarnings(as.integer(gsub("[^0-9-]", "", as.character(dt[[hcol]]))))
-          dt[, timestamp := suppressWarnings(as.POSIXct(sprintf(
-            "%04d-%02d-%02d %02d:00:00", as.integer(get(ycol)), as.integer(get(mcol)), as.integer(get(dcol)), hr_vals
-          ), tz = tz_string))]
-        } else {
-          # Hour missing: keep kind=hourly (inferred), but no seq check available
-          return(list(kind = kind, seq_ok = NA, reasons = c(reasons, "hour column missing; sequentiality not checked")))
+        per_day <- base_dt[, .(n_row = .N, uniq_hr = data.table::uniqueN(hr)), by = .(id, date)]
+        per_stn <- base_dt[, .(uniq_hr_all_days = data.table::uniqueN(hr)), by = id]
+        is_daily_one_hour <- (all(per_day$n_row == 1L) &&
+                                all(per_day$uniq_hr == 1L) &&
+                                all(per_stn$uniq_hr_all_days == 1L))
+        if (is_daily_one_hour) {
+          seq_ok <- base_dt[, .(seq_ok = .is_seq_days(unique(date))), by = id]
+          if (any(!seq_ok$seq_ok)) reasons <- c(reasons, "daily_one_hour has gaps in days")
+          return(list(kind = "daily_one_hour", seq_ok = all(seq_ok$seq_ok), reasons = reasons))
         }
         
-        # Detect DAILY-ONE-HOUR disguised as hourly (any fixed hour)
-        if (has_hour && !is.null(date_vec)) {
-          hr_vals <- suppressWarnings(as.integer(gsub("[^0-9-]", "", as.character(dt[[hcol]]))))
-          base_dt <- data.table::data.table(
-            id   = if ("id" %in% cols) dt$id else rep("STN", nrow(dt)),
-            date = date_vec,
-            hr   = hr_vals
-          )
-          per_day <- base_dt[, .(n_row = .N, uniq_hr = data.table::uniqueN(hr)), by = .(id, date)]
-          per_stn <- base_dt[, .(uniq_hr_all_days = data.table::uniqueN(hr)), by = id]
-          is_daily_one_hour <- (all(per_day$n_row == 1L) &&
-                                  all(per_day$uniq_hr == 1L) &&
-                                  all(per_stn$uniq_hr_all_days == 1L))
-          if (is_daily_one_hour) {
-            kind <- "daily_one_hour"
-            seq_ok <- base_dt[, .(seq_ok = .is_seq_days(unique(date))), by = id]
-            if (any(!seq_ok$seq_ok)) reasons <- c(reasons, "daily_one_hour has gaps in days")
-            return(list(kind = kind, seq_ok = all(seq_ok$seq_ok), reasons = reasons))
-          }
-        }
-        
-        # Hourly sequentiality (per station)
-        if ("id" %in% names(dt)) {
-          data.table::setorder(dt, id, timestamp)
+        # Hourly sequential check
+        id_col <- if (!is.null(rc$id) && rc$id %in% names(dt)) rc$id else NULL
+        if (!is.null(id_col)) {
+          data.table::setorderv(dt, c(id_col, "timestamp"))
           gaps <- dt[, .(gap_count = .count_hour_gaps(timestamp),
-                         dup_count = .count_hour_dups(timestamp)), by = id]
+                         dup_count = .count_hour_dups(timestamp)), by = id_col]
+          data.table::setnames(gaps, id_col, "id")
           if (any(gaps$gap_count > 0)) {
-            reasons <- c(reasons, sprintf("hourly gaps detected for stations: %s",
-                                          paste(gaps$id[gaps$gap_count > 0], collapse = ", ")))
+            reasons <- c(reasons, sprintf("hourly gaps detected: %s", paste(gaps$id[gaps$gap_count > 0], collapse=", ")))
           }
-          return(list(kind = kind, seq_ok = !any(gaps$gap_count > 0), reasons = reasons))
+          if (any(gaps$dup_count > 0)) {
+            reasons <- c(reasons, sprintf("hourly duplicates detected: %s", paste(gaps$id[gaps$dup_count > 0], collapse=", ")))
+          }
+          return(list(kind = "hourly", seq_ok = !any(gaps$gap_count > 0), reasons = reasons))
         } else {
-          data.table::setorder(dt, timestamp)
-          gc <- .count_hour_gaps(dt$timestamp)
-          if (gc > 0) reasons <- c(reasons, "hourly gaps detected (no id)")
-          return(list(kind = kind, seq_ok = gc == 0, reasons = reasons))
+          data.table::setorderv(dt, "timestamp")
+          d <- as.numeric(diff(dt$timestamp), units="hours")
+          if (any(d > 1 & d != 2)) reasons <- c(reasons, "hourly gaps detected (no id)")
+          if (any(d == 0))         reasons <- c(reasons, "hourly duplicates detected (no id)")
+          return(list(kind = "hourly", seq_ok = !any(d > 1 & d != 2), reasons = reasons))
         }
       }
       
-      # --- DAILY schema only if we didn’t match hourly signature ---
-      if (has_date || has_ymd) {
-        kind <- "daily"
-        dts <- if (has_date) suppressWarnings(as.Date(dt[[date_col]])) else
-          suppressWarnings(as.Date(sprintf("%04d-%02d-%02d", dt[[ycol]], dt[[mcol]], dt[[dcol]])))
-        if ("id" %in% names(dt)) {
-          seq_chk <- data.table::data.table(id = dt$id, date = dts)[, .(seq_ok = .is_seq_days(date)), by = id]
-          if (any(!seq_chk$seq_ok)) reasons <- c(reasons, sprintf("daily gaps detected for stations: %s",
-                                                                  paste(seq_chk$id[!seq_chk$seq_ok], collapse = ", ")))
-          return(list(kind = kind, seq_ok = all(seq_chk$seq_ok), reasons = reasons))
-        } else {
-          return(list(kind = kind, seq_ok = .is_seq_days(dts), reasons = reasons))
+      # 2) HOURLY via datetime (only if Y/M/D/H is missing; safe parsing)
+      if (has_dt) {
+        x2 <- gsub("\\s*\\([^)]*\\)\\s*$", "", as.character(dt[[rc$datetime]]))
+        parsed <- tryCatch(
+          suppressWarnings(as.POSIXct(x2, tz = tz_string,
+                                      tryFormats = c(
+                                        "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M",
+                                        "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M",
+                                        "%H:%M %Y-%m-%d",    "%H:%M %Y/%m/%d",
+                                        "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ"
+                                      )
+          )),
+          error = function(e) rep(NA_real_, nrow(dt))
+        )
+        dt[, timestamp := parsed]
+        if (sum(!is.na(parsed)) == 0) {
+          return(list(kind = "hourly", seq_ok = NA, reasons = c(reasons, "datetime present but unparsable")))
         }
+        data.table::setorderv(dt, "timestamp")
+        d <- as.numeric(diff(dt$timestamp), units="hours")
+        if (any(d > 1 & d != 2)) reasons <- c(reasons, "hourly gaps detected (datetime)")
+        return(list(kind = "hourly", seq_ok = !any(d > 1 & d != 2), reasons = reasons))
       }
       
-      list(kind = "unknown", seq_ok = NA, reasons = c(reasons, "unable to classify by schema"))
+      # 3) DAILY when hourly signatures absent
+      if (!is.null(rc$date) && rc$date %in% names(dt) || has_ymd) {
+        dts <- if (!is.null(rc$date) && rc$date %in% names(dt)) {
+          suppressWarnings(as.Date(dt[[rc$date]]))
+        } else {
+          suppressWarnings(as.Date(sprintf("%04d-%02d-%02d", dt[[rc$yr]], dt[[rc$mon]], dt[[rc$day]])))
+        }
+        seq_ok <- { d <- diff(sort(unique(dts))); all(d == 1) }
+        return(list(kind = "daily", seq_ok = seq_ok, reasons = reasons))
+      }
+      
+      # 4) Unknown (verbose names to help diagnose)
+      list(kind = "unknown", seq_ok = NA,
+           reasons = c(reasons, sprintf("unknown: names=%s", paste(names(dt), collapse=", "))))
     }
     
-    # Attach provenance attribute
+    # ---- Provenance ----------------------------------------------------------
     attach_provenance <- function(out, source, conversion, tz_string, offset_policy, prepared_at, offset_hours = NA) {
-      tz_off <- if (is.na(offset_hours)) as.integer(format(as.POSIXlt(Sys.time(), tz = tz_string), "%z")) / 100 else offset_hours
+      tz_off <- if (is.na(offset_hours)) as.integer(format(as.POSIXct(Sys.time(), tz = tz_string), "%z")) / 100 else offset_hours
       attr(out, "provenance") <- list(
         source = source,
         conversion = conversion,
@@ -418,10 +453,10 @@ mod_prepare_server <- function(
       out
     }
     
-    # --- Reactive state -------------------------------------------------------
-    raw_like_rv  <- reactiveVal(NULL)
-    daily_src_rv <- reactiveVal(NULL)
-    meta_rv      <- reactiveVal(list(
+    # ---- Reactive state ------------------------------------------------------
+    raw_like_rv  <- shiny::reactiveVal(NULL)
+    daily_src_rv <- shiny::reactiveVal(NULL)
+    meta_rv      <- shiny::reactiveVal(list(
       kind = NA, converted = FALSE, failed = FALSE,
       log = character(),
       t_detect_ms = NA_real_, t_convert_ms = NA_real_, t_total_ms = NA_real_,
@@ -429,14 +464,14 @@ mod_prepare_server <- function(
       run_id = NA_integer_, started_at = NA, finished_at = NA,
       tz = NA_character_, offset_policy = NA_character_, diurnal = NA_character_
     ))
-    last_kind_rv <- reactiveVal(NULL)
-    run_id_rv    <- reactiveVal(0L)
-    gap_observer_rv <- reactiveVal(NULL)  # <-- to destroy & recreate per upload
+    last_kind_rv <- shiny::reactiveVal(NULL)
+    run_id_rv    <- shiny::reactiveVal(0L)
+    gap_observer_rv <- shiny::reactiveVal(NULL)  # destroy & recreate per upload
     
-    prep_ready <- eventReactive(
+    prep_ready <- shiny::eventReactive(
       list(raw_file(), mapping$col_temp(), tz$tz_use(), diurnal_method_reactive()),
       {
-        req(raw_file(), nzchar(tz$tz_use()))
+        shiny::req(raw_file(), nzchar(tz$tz_use()))
         list(
           src = raw_file(),
           tz_string = tz$tz_use(),
@@ -447,11 +482,12 @@ mod_prepare_server <- function(
       ignoreInit = TRUE
     )
     
-    debounced_ready <- debounce(prep_ready, 500)
+    debounced_ready <- shiny::debounce(prep_ready, 500)
     
-    # --- Main orchestrator ----------------------------------------------------
-    observeEvent(debounced_ready(), {
-      # destroy any previous gap-policy observer so a fresh selection is required
+    # ---- Orchestrator --------------------------------------------------------
+    shiny::observeEvent(debounced_ready(), {
+      # clear any modal and old observer
+      shiny::removeModal()
       prev_obs <- gap_observer_rv()
       if (!is.null(prev_obs)) { prev_obs$destroy(); gap_observer_rv(NULL) }
       
@@ -468,7 +504,7 @@ mod_prepare_server <- function(
       n_rows_in     <- nrow(src)
       station_count <- if ("id" %in% names(src)) length(unique(src$id)) else 1L
       
-      # Detection timing
+      # Detection
       t_det_start  <- proc.time()
       det          <- detect_resolution(src, tz_string)
       t_detect_ms  <- as.numeric((proc.time() - t_det_start)[["elapsed"]]) * 1000
@@ -496,12 +532,10 @@ mod_prepare_server <- function(
         return()
       }
       
-      # 2) HOURLY with gaps -> present options (default: fill only the gaps)
+      # 2) HOURLY with gaps -> offer actions (fill gaps or replace stream via daily NOON)
       if (det$kind == "hourly" && !isTRUE(det$seq_ok)) {
-        # Precompute valid options BEFORE presenting the modal
         can_replace <- daily_noon_is_complete(src)
         
-        # Build choices vector dynamically
         choices <- c(
           "Stop and let me fix the source file" = "stop",
           "Fill only the missing hours (daily→hourly for gaps)" = "fill_gaps"
@@ -510,16 +544,15 @@ mod_prepare_server <- function(
           choices <- c(choices, "Replace entire stream: use daily NOON (hr=12) and convert to hourly" = "replace_stream")
         }
         
-        showModal(modalDialog(
+        shiny::showModal(shiny::modalDialog(
           title = "Hourly sequence has gaps",
-          radioButtons(ns("gap_policy"), "Choose an action:", choices = choices, selected = "fill_gaps"),
-          footer = tagList(modalButton("Cancel"), actionButton(ns("apply_gap_policy"), "Apply")),
+          shiny::radioButtons(ns("gap_policy"), "Choose an action:", choices = choices, selected = "fill_gaps"),
+          footer = shiny::tagList(shiny::modalButton("Cancel"), shiny::actionButton(ns("apply_gap_policy"), "Apply")),
           easyClose = TRUE
         ))
         
-        # Create a fresh, single-use observer for this upload
-        gap_obs <- observeEvent(input$apply_gap_policy, {
-          removeModal()
+        gap_obs <- shiny::observeEvent(input$apply_gap_policy, {
+          shiny::removeModal()
           choice <- input$gap_policy
           
           if (identical(choice, "stop")) {
@@ -619,24 +652,23 @@ mod_prepare_server <- function(
           return()
         }, once = TRUE, ignoreInit = TRUE)
         
-        gap_observer_rv(gap_obs)  # store so we can destroy on next upload
+        gap_observer_rv(gap_obs)
         return()
       }
       
-      # 3) DAILY_ONE_HOUR (any fixed hour per day) -> treat as DAILY and convert
+      # 3) DAILY_ONE_HOUR -> treat as DAILY and convert
       if (det$kind == "daily_one_hour") {
         emit_toast(sprintf("Detected DAILY (fixed-hour) input. Converting to HOURLY (%s)…", dia), "message", 5)
         logs <- c(logs, "[Prepare] Detected DAILY (one-hour-per-day) input.",
                   if (isTRUE(det$seq_ok)) "[Prepare] Daily sequence looks continuous." else "[Prepare][WARN] Daily sequence has gaps.",
                   "[Prepare] Converting to HOURLY …")
         
-        # Build daily rows from fixed-hour entries
         dt   <- data.table::as.data.table(src)
-        cols <- resolve_cols(dt)
-        dt[, date := as.Date(sprintf("%04d-%02d-%02d", get(cols$yr), get(cols$mon), get(cols$day)))]
-        daily <- dt[, make_daily_row(.SD, cols),
-                    by = .(id_group = if (!is.null(cols$id)) get(cols$id) else rep("STN", .N), date)]
-        daily[, id_group := NULL]  # drop grouping helper; id already in rows
+        rc   <- resolve_cols(dt)
+        dt[, date := as.Date(sprintf("%04d-%02d-%02d", get(rc$yr), get(rc$mon), get(rc$day)))]
+        daily <- dt[, make_daily_row(.SD, rc),
+                    by = .(id_group = if (!is.null(rc$id)) get(rc$id) else rep("STN", .N), date)]
+        daily[, id_group := NULL]
         
         t_conv_start <- proc.time()
         res <- try(convert_multi_station_daily_to_hourly(daily, tz_string, dia), silent = FALSE)
@@ -676,7 +708,7 @@ mod_prepare_server <- function(
         return()
       }
       
-      # 4) DAILY (YMD or date) -> convert to HOURLY
+      # 4) DAILY -> convert to HOURLY
       if (det$kind == "daily") {
         emit_toast(sprintf("Detected DAILY input. Converting to HOURLY (%s)…", dia), "message", 5)
         logs <- c(logs, "[Prepare] Detected DAILY input.",
@@ -737,12 +769,12 @@ mod_prepare_server <- function(
       ))
     })
     
-    # Expose outputs
+    # ---- Expose outputs ------------------------------------------------------
     list(
-      raw_uploaded = reactive(raw_file()),
-      hourly_file  = reactive(raw_like_rv()),
-      src_daily    = reactive(daily_src_rv()),
-      prep_meta    = reactive(meta_rv())
+      raw_uploaded = shiny::reactive(raw_file()),
+      hourly_file  = shiny::reactive(raw_like_rv()),
+      src_daily    = shiny::reactive(daily_src_rv()),
+      prep_meta    = shiny::reactive(meta_rv())
     )
   })
 }
