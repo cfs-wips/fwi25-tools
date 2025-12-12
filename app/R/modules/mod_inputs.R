@@ -73,10 +73,10 @@ mod_inputs_server <- function(id, tr, dt_i18n, raw_data, hourly_data) {
           options = list(
             language = dt_i18n(),
             autoWidth = TRUE,
-            scrollX = TRUE,
-            deferRender = TRUE,
-            scroller = TRUE,
-            scrollY = 300,
+            scrollX = F,
+            deferRender = F,
+            scroller = F,
+            scrollY = 900,
             scrollCollapse = TRUE,
             pageLength = 25,
             lengthMenu = list(c(10, 25, 50, 100, -1), c("10", "25", "50", "100", "All")),
@@ -91,7 +91,7 @@ mod_inputs_server <- function(id, tr, dt_i18n, raw_data, hourly_data) {
           callback = cb
         )
       },
-      options = list(scrollX = TRUE)
+      options = list(scrollX = F)
     )
   })
 }

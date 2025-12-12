@@ -47,8 +47,6 @@ mod_mapping_ui <- function(id) {
 }
 
 
-
-
 mod_mapping_server <- function(id, tr, lang, cols, df) {
   moduleServer(id, function(input, output, session) {
     # --- Section heading ---
@@ -105,7 +103,7 @@ mod_mapping_server <- function(id, tr, lang, cols, df) {
 
       updateSelectInput(session, "col_datetime",
         choices = choices,
-        selected = keep_or(input$col_datetime, cc, find_col(cc, c("datetime", "timestamp")))
+        selected = keep_or(input$col_datetime, cc, find_col(cc, c("datetime", "timestamp", "Time and Date", "Date and Time", "Date & Time", "Time & Date", "Datetime", "DateTime")))
       )
       updateSelectInput(session, "col_id",
         choices = choices,

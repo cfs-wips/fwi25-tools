@@ -1,176 +1,257 @@
-
 # R/modules/mod_prepare.R
-# Robust prepare module:
-#  - Hourly-vs-daily detection that prefers Y/M/D/H
-#  - Safe datetime handling (strip "(...)" suffixes, never throws)
-#  - Gap fill using daily→hourly synthesis for missing hours
-#  - Optional replace-stream using daily NOON (hr=12) → hourly
-#  - Provenance + timing + lightweight logs
-#  - Case-insensitive column resolver across varied schemas
+# Prepare module — robust resolution detection, gap fill (robust Y/M/D/H join),
+# type normalization, canonical schema promotion & pruning, and data.table-friendly assignments.
 
 mod_prepare_server <- function(
-    id,
-    raw_file,
-    mapping,
-    tz,
-    diurnal_method_reactive = shiny::reactive("BT-default"),
-    notify = TRUE
+  id,
+  raw_file,
+  mapping,
+  tz,
+  diurnal_method_reactive = shiny::reactive("BT-default"),
+  notify = TRUE
 ) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
-    
-    # ---- Utilities -----------------------------------------------------------
+
     `%||%` <- function(a, b) if (is.null(a) || length(a) == 0) b else a
     emit_toast <- function(text, type = "message", duration = 5) {
       if (isTRUE(notify)) shiny::showNotification(text, type = type, duration = duration)
     }
-    
-    # ---- Dependencies (expected to exist) ------------------------------------
-    source("ng/make_minmax.r")  # daily_to_minmax()
-    source("ng/make_hourly.r")  # minmax_to_hourly()
-    
-    # Normalize a token (lowercase, remove non-alphanum)
+    emit_err <- function(where, e) {
+      msg <- sprintf("[Prepare][ERROR][%s] %s", where, conditionMessage(e))
+      message(msg)
+      emit_toast(msg, "error", 6)
+    }
+
+    # Dependencies
+    source("ng/make_minmax.r") # daily_to_minmax()
+    source("ng/make_hourly.r") # minmax_to_hourly()
+
     .norm <- function(x) gsub("[^a-z0-9]", "", tolower(x))
-    
-    # Helper to safely call mapping$col_*() if present
     .map_get <- function(fun) {
-      if (is.null(fun)) return(NULL)
+      if (is.null(fun)) {
+        return(NULL)
+      }
       tryCatch(fun(), error = function(e) NULL)
     }
-    
-    # Find the first column in dt whose normalized name equals any normalized token
+
+    dt_prepare_for_add <- function(dt, extra_cols = 6L) {
+      data.table::setDT(dt)
+      data.table::setalloccol(dt, n = extra_cols)
+      dt
+    }
+    set_col <- function(dt, name, value) {
+      data.table::set(dt, j = name, value = value)
+    }
+
     .find_col <- function(dt, tokens) {
-      if (is.null(tokens) || !length(tokens)) return(NULL)
+      if (is.null(tokens) || !length(tokens)) {
+        return(NULL)
+      }
       toks <- unique(tokens[!is.na(tokens) & nzchar(tokens)])
-      if (!length(toks)) return(NULL)
-      nm   <- names(dt)
-      nmn  <- vapply(nm, .norm, "", USE.NAMES = FALSE)
-      toksn<- vapply(toks, .norm, "", USE.NAMES = FALSE)
+      nm <- names(dt)
+      nmn <- vapply(nm, .norm, "", USE.NAMES = FALSE)
+      toksn <- vapply(toks, .norm, "", USE.NAMES = FALSE)
       for (t in toksn) {
         i <- which(nmn == t)
-        if (length(i)) return(nm[i[1]])
+        if (length(i)) {
+          return(nm[i[1]])
+        }
       }
       NULL
     }
-    
-    # Guess a datetime column name only if needed (safe)
+
     guess_datetime_col <- function(dt) {
-      nm <- names(dt); nmn <- vapply(nm, .norm, "", USE.NAMES = FALSE)
-      wanted <- c("datetime","timestamp","timeanddate","dateandtime","date_time","timelocal","localtime","dt")
-      for (i in seq_along(nm)) {
-        if (nmn[i] %in% wanted) return(nm[i])
+      nm <- names(dt)
+      nmn <- vapply(nm, .norm, "", USE.NAMES = FALSE)
+      wanted <- c("datetime", "timestamp", "timeanddate", "dateandtime", "date_time", "timelocal", "localtime", "dt")
+      for (i in seq_along(nm)) if (nmn[i] %in% wanted) {
+        return(nm[i])
       }
-      # fallback: try character columns that parse well (strip parentheses like "(-6h)")
-      try_formats <- c(
-        "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M",
-        "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M",
-        "%H:%M %Y-%m-%d",    "%H:%M %Y/%m/%d",
-        "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ"
-      )
+      try_formats <- c("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S%z")
       safe_parse <- function(x) {
         x2 <- gsub("\\s*\\([^)]*\\)\\s*$", "", x)
-        tryCatch(suppressWarnings(as.POSIXct(x2, tz = "UTC", tryFormats = try_formats)),
-                 error = function(e) rep(NA_real_, length(x2)))
+        tryCatch(suppressWarnings(as.POSIXct(x2, tz = "UTC", tryFormats = try_formats)), error = function(e) rep(NA_real_, length(x2)))
       }
       for (col in nm) {
         x <- dt[[col]]
         if (!is.character(x)) next
         parsed <- safe_parse(x)
         good_frac <- sum(!is.na(parsed)) / max(1L, length(parsed))
-        hour_var  <- if (all(is.na(parsed))) FALSE else (length(unique(format(parsed, "%H"))) > 1)
-        if (good_frac >= 0.80 && hour_var) return(col)
+        hour_var <- if (all(is.na(parsed))) FALSE else (length(unique(format(parsed, "%H"))) > 1)
+        if (good_frac >= 0.80 && hour_var) {
+          return(col)
+        }
       }
       NULL
     }
-    
-    # ---- Column resolver (HOTFIX: case-insensitive, schema-first) ------------
+
     resolve_cols <- function(dt) {
-      # 1) Prefer schema via common variants, case-insensitive
-      yr  <- .find_col(dt, c(.map_get(mapping$col_year),  "yr", "year"))
-      mon <- .find_col(dt, c(.map_get(mapping$col_month), "mon","month"))
-      day <- .find_col(dt, c(.map_get(mapping$col_day),   "day","date","dom"))
-      hr  <- .find_col(dt, c(.map_get(mapping$col_hour),  "hr","hour","hh"))
-      
-      # 2) Only consider free-form datetime if Y/M/D/H is incomplete
+      yr <- .find_col(dt, c(.map_get(mapping$col_year), "yr", "year"))
+      mon <- .find_col(dt, c(.map_get(mapping$col_month), "mon", "month"))
+      day <- .find_col(dt, c(.map_get(mapping$col_day), "day", "date", "dom"))
+      hr <- .find_col(dt, c(.map_get(mapping$col_hour), "hr", "hour", "hh"))
       datetime <- NULL
       if (is.null(yr) || is.null(mon) || is.null(day) || is.null(hr)) {
-        datetime <- .find_col(dt, c(.map_get(mapping$col_datetime),
-                                    "datetime","timestamp","timeanddate","dateandtime","date_time"))
+        datetime <- .find_col(dt, c(.map_get(mapping$col_datetime), "datetime", "timestamp", "timeanddate", "dateandtime", "date_time"))
         if (is.null(datetime)) datetime <- guess_datetime_col(dt)
       }
-      
-      # 3) id + core met vars (robust, case-insensitive)
-      id   <- .find_col(dt, c(.map_get(mapping$col_id), "id","station","stationname","station_name","station name"))
-      lat  <- .find_col(dt, c("lat","latitude"))
-      long <- .find_col(dt, c("long","lon","longitude"))
-      
-      temp <- .find_col(dt, c(.map_get(mapping$col_temp), "temp","temperature"))
-      rh   <- .find_col(dt, c(.map_get(mapping$col_rh),   "rh","relhum","relativehumidity"))
-      ws   <- .find_col(dt, c(.map_get(mapping$col_ws),   "ws","wspd","windspeed","wind"))
-      prec <- .find_col(dt, c(.map_get(mapping$col_prec), "prec","rn_1","rain","rain_24","rain24","p24"))
-      
+      id <- .find_col(dt, c(.map_get(mapping$col_id), "id", "station", "stationname", "station_name", "station name"))
+      lat <- .find_col(dt, c(.map_get(mapping$col_lat), "lat", "latitude"))
+      long <- .find_col(dt, c(.map_get(mapping$col_lon), "long", "lon", "longitude"))
+      temp <- .find_col(dt, c(.map_get(mapping$col_temp), "temp", "temperature"))
+      rh <- .find_col(dt, c(.map_get(mapping$col_rh), "rh", "relhum", "relativehumidity"))
+      ws <- .find_col(dt, c(.map_get(mapping$col_ws), "ws", "wspd", "windspeed", "wind"))
+      prec <- .find_col(dt, c(.map_get(mapping$col_prec), "prec", "rn_1", "rain", "rain_24", "rain24", "p24"))
       date <- .find_col(dt, c(.map_get(mapping$col_date), "date"))
-      
-      # Debug to console (helps diagnose misclassification)
-      msg <- sprintf("[Prepare][DEBUG] Found cols: id=%s lat=%s long=%s yr=%s mon=%s day=%s hr=%s datetime=%s temp=%s rh=%s ws=%s prec=%s",
-                     id, lat, long, yr, mon, day, hr, datetime, temp, rh, ws, prec)
-      message(msg)
-      
-      list(id=id, lat=lat, long=long, yr=yr, mon=mon, day=day, hr=hr,
-           temp=temp, rh=rh, ws=ws, prec=prec, datetime=datetime, date=date)
+      message(sprintf(
+        "[Prepare][DEBUG] Found cols: id=%s lat=%s long=%s yr=%s mon=%s day=%s hr=%s datetime=%s temp=%s rh=%s ws=%s prec=%s date=%s",
+        id, lat, long, yr, mon, day, hr, datetime, temp, rh, ws, prec, date
+      ))
+      list(
+        id = id, lat = lat, long = long, yr = yr, mon = mon, day = day, hr = hr,
+        temp = temp, rh = rh, ws = ws, prec = prec, datetime = datetime, date = date
+      )
     }
-    
-    # ---- DST-aware checks ----------------------------------------------------
-    .count_hour_gaps <- function(ts) { d <- as.numeric(diff(ts), units = "hours"); sum(d > 1 & d != 2) }  # ignore spring-forward +2
-    .count_hour_dups <- function(ts) { d <- as.numeric(diff(ts), units = "hours"); sum(d == 0) }          # fall-back duplicates
-    .is_seq_days     <- function(d)  { if (!length(d)) return(FALSE); all(diff(d) == 1) }
-    
-    # Safe ordering by id + timestamp
-    safe_setorder <- function(dt, id_name) {
-      if (!is.null(id_name) && id_name %in% names(dt)) {
-        data.table::setorderv(dt, c(id_name, "timestamp"))
-      } else {
-        data.table::setorderv(dt, "timestamp")
+
+    .count_hour_gaps <- function(ts) {
+      d <- as.numeric(diff(ts), units = "hours")
+      sum(d > 1 & d != 2)
+    }
+    .count_hour_dups <- function(ts) {
+      d <- as.numeric(diff(ts), units = "hours")
+      sum(d == 0)
+    }
+    .is_seq_days <- function(d) {
+      if (!length(d)) {
+        return(FALSE)
       }
+      all(diff(d) == 1)
     }
-    
-    # ---- Conversions ---------------------------------------------------------
+    safe_setorder <- function(dt, id_name) {
+      if (!is.null(id_name) && id_name %in% names(dt)) data.table::setorderv(dt, c(id_name, "timestamp")) else data.table::setorderv(dt, "timestamp")
+    }
+
+    normalize_types_hourly <- function(dt, cols) {
+      num_candidates <- unique(na.omit(c(
+        cols$temp, "temp", "Temp", "temperature", "Temperature",
+        cols$rh, "rh", "RH", "Rh", "relhum", "RelativeHumidity", "relativehumidity",
+        cols$ws, "ws", "Wspd", "WS", "windspeed", "wind", "wspd",
+        cols$prec, "prec", "rn_1", "Rain_24", "rain_24", "rain", "Rain", "p24", "P24",
+        "FFMC", "DMC", "DC", "BUI", "ISI", "FWI", cols$lat, cols$long, "lat", "latitude", "long", "lon", "longitude",
+        cols$yr, cols$mon, cols$day, cols$hr, "year", "month", "day", "hour"
+      )))
+      present <- intersect(num_candidates, names(dt))
+      for (cn in present) {
+        if (is.character(dt[[cn]])) dt[[cn]] <- trimws(dt[[cn]])
+        dt[[cn]] <- suppressWarnings(as.numeric(dt[[cn]]))
+      }
+      for (nm in c("year", "month", "day", "hour")) if (nm %in% names(dt)) dt[[nm]] <- suppressWarnings(as.integer(dt[[nm]]))
+      if (!is.null(cols$yr) && cols$yr %in% names(dt)) dt[[cols$yr]] <- suppressWarnings(as.integer(dt[[cols$yr]]))
+      if (!is.null(cols$mon) && cols$mon %in% names(dt)) dt[[cols$mon]] <- suppressWarnings(as.integer(dt[[cols$mon]]))
+      if (!is.null(cols$day) && cols$day %in% names(dt)) dt[[cols$day]] <- suppressWarnings(as.integer(dt[[cols$day]]))
+      if (!is.null(cols$hr) && cols$hr %in% names(dt)) dt[[cols$hr]] <- suppressWarnings(as.integer(gsub("[^0-9-]", "", as.character(dt[[cols$hr]]))))
+      dt[]
+    }
+
+    parse_char_timestamp <- function(x, tz_string) {
+      x <- gsub("\\s*\\([^)]*\\)\\s*$", "", x)
+      try_formats <- c("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S%z")
+      tryCatch(suppressWarnings(as.POSIXct(x, tz = tz_string, tryFormats = try_formats)), error = function(e) suppressWarnings(as.POSIXct(x, tz = "UTC", tryFormats = try_formats)))
+    }
+
+    canonize_time_columns <- function(dt, tz_string, cols) {
+      dt <- dt_prepare_for_add(dt)
+      if ("long" %in% names(dt) && !("lon" %in% names(dt))) data.table::setnames(dt, "long", "lon")
+      if ("timestamp" %in% names(dt)) {
+        if (!inherits(dt$timestamp, "POSIXct")) {
+          if (is.character(dt$timestamp)) {
+            parsed <- parse_char_timestamp(dt$timestamp, tz_string)
+            set_col(dt, "timestamp", parsed)
+          } else {
+            set_col(dt, "timestamp", suppressWarnings(as.POSIXct(dt$timestamp, tz = tz_string)))
+          }
+        } else {
+          data.table::setattr(dt$timestamp, "tzone", tz_string)
+        }
+        have_ts <- !is.na(dt$timestamp)
+        if (any(have_ts)) {
+          set_col(dt, "year", as.integer(format(dt$timestamp, "%Y")))
+          set_col(dt, "month", as.integer(format(dt$timestamp, "%m")))
+          set_col(dt, "day", as.integer(format(dt$timestamp, "%d")))
+          set_col(dt, "hour", as.integer(format(dt$timestamp, "%H")))
+        }
+      }
+      need_build <- !("timestamp" %in% names(dt)) || all(is.na(dt$timestamp))
+      if (need_build) {
+        year_col <- if ("year" %in% names(dt)) "year" else cols$yr
+        mon_col <- if ("month" %in% names(dt)) "month" else cols$mon
+        day_col <- if ("day" %in% names(dt)) "day" else cols$day
+        hr_col <- if ("hour" %in% names(dt)) "hour" else cols$hr
+        if (!is.null(year_col) && !is.null(mon_col) && !is.null(day_col) && !is.null(hr_col)) {
+          y <- suppressWarnings(as.integer(dt[[year_col]]))
+          m <- suppressWarnings(as.integer(dt[[mon_col]]))
+          d <- suppressWarnings(as.integer(dt[[day_col]]))
+          h <- suppressWarnings(as.integer(gsub("[^0-9-]", "", as.character(dt[[hr_col]]))))
+          ok <- !(is.na(y) | is.na(m) | is.na(d) | is.na(h))
+          ts_vec <- as.POSIXct(rep(NA_real_, nrow(dt)), tz = tz_string, origin = "1970-01-01")
+          set_col(dt, "timestamp", ts_vec)
+          if (any(ok)) {
+            ts_char <- sprintf("%04d-%02d-%02d %02d:00:00", y[ok], m[ok], d[ok], h[ok])
+            ts_new <- suppressWarnings(as.POSIXct(ts_char, tz = tz_string))
+            data.table::set(dt, i = which(ok), j = "timestamp", value = ts_new)
+          } else {
+            emit_toast("[Prepare][WARN] Cannot build timestamp: missing Y/M/D/H parts.", "warning", 5)
+          }
+        } else {
+          emit_toast("[Prepare][WARN] Cannot build timestamp: time parts not found.", "warning", 5)
+        }
+      }
+      if (!("year" %in% names(dt)) && !is.null(cols$yr) && cols$yr %in% names(dt)) data.table::setnames(dt, cols$yr, "year")
+      if (!("month" %in% names(dt)) && !is.null(cols$mon) && cols$mon %in% names(dt)) data.table::setnames(dt, cols$mon, "month")
+      if (!("day" %in% names(dt)) && !is.null(cols$day) && cols$day %in% names(dt)) data.table::setnames(dt, cols$day, "day")
+      if (!("hour" %in% names(dt)) && !is.null(cols$hr) && cols$hr %in% names(dt)) data.table::setnames(dt, cols$hr, "hour")
+      for (dup in c(cols$yr, cols$mon, cols$hr)) {
+        if (!is.null(dup) && dup %in% names(dt) && !(dup %in% c("year", "month", "hour"))) dt[, (dup) := NULL]
+      }
+      dt <- normalize_types_hourly(dt, resolve_cols(dt))
+      dt[]
+    }
+
     convert_daily_to_hourly <- function(df, tz_string, diurnal_method) {
       req_cols <- c("yr", "mon", "day", "temp", "rh", "ws", "prec")
-      if (!all(req_cols %in% names(df))) {
-        stop("Missing daily columns: ", paste(setdiff(req_cols, names(df)), collapse = ", "))
-      }
-      tz_off <- as.integer(format(as.POSIXct(Sys.time(), tz = tz_string), "%z")) / 100
-      
+      if (!all(req_cols %in% names(df))) stop("Missing daily columns: ", paste(setdiff(req_cols, names(df)), collapse = ", "))
+      tz_off <- if ("timezone" %in% names(df)) suppressWarnings(as.integer(na.omit(unique(df$timezone)))[1L]) else as.integer(format(as.POSIXct(Sys.time(), tz = tz_string), "%z")) / 100
       mm <- try(daily_to_minmax(df[, .(yr, mon, day, temp, rh, ws, prec)]), silent = TRUE)
       if (inherits(mm, "try-error")) stop(paste("daily_to_minmax() failed:", as.character(mm)))
       names(mm) <- tolower(names(mm))
-      
-      # carry id/lat/long if present
-      mm$id   <- if ("id"   %in% names(df)) df$id[1]   else "STN"
-      mm$lat  <- if ("lat"  %in% names(df)) df$lat[1]  else NA_real_
-      mm$long <- if ("long" %in% names(df)) df$long[1] else NA_real_
-      
-      # Build args (defensive to optional formals)
-      fml  <- try(formalArgs(minmax_to_hourly), silent = TRUE)
+      mm$id <- if ("id" %in% names(df)) df$id[1] else "STN"
+      mm$lat <- if ("lat" %in% names(df)) df$lat[1] else NA_real_
+      mm$long <- if ("long" %in% names(df)) df$long[1] else if ("lon" %in% names(df)) df$lon[1] else NA_real_
+      fml <- try(formalArgs(minmax_to_hourly), silent = TRUE)
       args <- list(mm, timezone = tz_off, verbose = FALSE, round_out = NA)
       if (!inherits(fml, "try-error") && "skip_invalid" %in% fml) args$skip_invalid <- TRUE
       if (!inherits(fml, "try-error")) {
-        if ("method"  %in% fml) args$method  <- diurnal_method
+        if ("method" %in% fml) args$method <- diurnal_method
         if ("diurnal" %in% fml) args$diurnal <- diurnal_method
       }
-      
-      hr <- try(do.call(minmax_to_hourly, args), silent = TRUE)
+      hr <- try(suppressMessages(suppressWarnings(do.call(minmax_to_hourly, args))), silent = TRUE)
       if (inherits(hr, "try-error")) stop(paste("minmax_to_hourly() failed:", as.character(hr)))
-      
-      list(hourly = hr, tz_off = tz_off, logs = character())
+      nm_lower <- tolower(names(hr))
+      year_col <- if ("yr" %in% nm_lower) "yr" else if ("year" %in% nm_lower) "year" else NA_character_
+      month_col <- if ("mon" %in% nm_lower) "mon" else if ("month" %in% nm_lower) "month" else NA_character_
+      day_col <- if ("day" %in% nm_lower) "day" else NA_character_
+      hour_col <- if ("hr" %in% nm_lower) "hr" else if ("hour" %in% nm_lower) "hour" else NA_character_
+      if (!("timestamp" %in% names(hr)) && all(!is.na(c(year_col, month_col, day_col, hour_col)))) {
+        hr[, timestamp := as.POSIXct(sprintf("%04d-%02d-%02d %02d:00:00", as.integer(get(year_col)), as.integer(get(month_col)), as.integer(get(day_col)), as.integer(get(hour_col))), tz = tz_string)]
+      }
+      if ("long" %in% names(hr) && !("lon" %in% names(hr))) data.table::setnames(hr, "long", "lon")
+      list(hourly = hr[], tz_off = tz_off)
     }
-    
+
     convert_multi_station_daily_to_hourly <- function(df, tz_string, diurnal_method) {
       if (!"id" %in% names(df)) stop("Daily input must have an 'id' column.")
       stn_list <- split(df, df$id)
-      
-      # optional gap report on daily input
       gaps <- lapply(stn_list, function(stn) {
         stn$date <- as.Date(sprintf("%04d-%02d-%02d", stn$yr, stn$mon, stn$day))
         any(diff(stn$date) != 1)
@@ -181,595 +262,624 @@ mod_prepare_server <- function(
         emit_toast(sprintf("Daily sequence has gaps for stations: %s", paste(gap_stations, collapse = ", ")), "warning", 6)
         logs <- c(logs, sprintf("[Prepare][WARN] Daily gaps: %s", paste(gap_stations, collapse = ", ")))
       }
-      
       hourly_list <- lapply(stn_list, function(stn) convert_daily_to_hourly(stn, tz_string, diurnal_method))
       hourly <- data.table::rbindlist(lapply(hourly_list, `[[`, "hourly"), fill = TRUE)
       list(hourly = hourly, tz_off = hourly_list[[1]]$tz_off, logs = logs)
     }
-    
-    # Represent a daily row (prefer hr==12 for temp/RH, else nearest)
+
     pick_daily_representative <- function(day_dt, col_hr, col_temp, col_rh) {
       hr_vals <- suppressWarnings(as.integer(gsub("[^0-9-]", "", as.character(day_dt[[col_hr]]))))
       idx12 <- which(hr_vals == 12L)
-      idx   <- if (length(idx12)) idx12[1] else which.min(abs(hr_vals - 12L))
-      list(
-        temp = suppressWarnings(as.numeric(day_dt[[col_temp]][idx])),
-        rh   = suppressWarnings(as.numeric(day_dt[[col_rh]][idx]))
-      )
+      idx <- if (length(idx12)) idx12[1] else which.min(abs(hr_vals - 12L))
+      list(temp = suppressWarnings(as.numeric(day_dt[[col_temp]][idx])), rh = suppressWarnings(as.numeric(day_dt[[col_rh]][idx])))
     }
-    
+
     make_daily_row <- function(day_dt, cols) {
-      repv    <- pick_daily_representative(day_dt, cols$hr, cols$temp, cols$rh)
+      repv <- pick_daily_representative(day_dt, cols$hr, cols$temp, cols$rh)
       ws_mean <- if (!is.null(cols$ws) && cols$ws %in% names(day_dt)) mean(suppressWarnings(as.numeric(day_dt[[cols$ws]])), na.rm = TRUE) else NA_real_
-      prec_sum<- if (!is.null(cols$prec) && cols$prec %in% names(day_dt)) sum(suppressWarnings(as.numeric(day_dt[[cols$prec]])), na.rm = TRUE) else 0
+      prec_sum <- if (!is.null(cols$prec) && cols$prec %in% names(day_dt)) sum(suppressWarnings(as.numeric(day_dt[[cols$prec]])), na.rm = TRUE) else 0
       data.table::data.table(
-        id   = if (!is.null(cols$id)) day_dt[[cols$id]][1] else "STN",
-        lat  = if (!is.null(cols$lat)) suppressWarnings(as.numeric(day_dt[[cols$lat]][1])) else NA_real_,
+        id = if (!is.null(cols$id)) day_dt[[cols$id]][1] else "STN",
+        lat = if (!is.null(cols$lat)) suppressWarnings(as.numeric(day_dt[[cols$lat]][1])) else NA_real_,
         long = if (!is.null(cols$long)) suppressWarnings(as.numeric(day_dt[[cols$long]][1])) else NA_real_,
-        yr   = suppressWarnings(as.integer(day_dt[[cols$yr]][1])),
-        mon  = suppressWarnings(as.integer(day_dt[[cols$mon]][1])),
-        day  = suppressWarnings(as.integer(day_dt[[cols$day]][1])),
+        yr = suppressWarnings(as.integer(day_dt[[cols$yr]][1])),
+        mon = suppressWarnings(as.integer(day_dt[[cols$mon]][1])),
+        day = suppressWarnings(as.integer(day_dt[[cols$day]][1])),
         temp = repv$temp, rh = repv$rh, ws = ws_mean, prec = prec_sum
       )
     }
-    
+
+    align_syn_to_stn_names <- function(stn_dt, syn_dt, cols) {
+      syn_map <- list(
+        temp = c(cols$temp, "temp", "Temp", "temperature", "Temperature"),
+        rh   = c(cols$rh, "rh", "RH", "Rh", "relhum", "RelativeHumidity", "relativehumidity"),
+        ws   = c(cols$ws, "ws", "Wspd", "WS", "wind", "Wind", "windspeed", "wspd"),
+        prec = c(cols$prec, "prec", "rn_1", "Rain_24", "rain_24", "rain", "Rain", "p24", "P24")
+      )
+      for (var in names(syn_map)) {
+        stn_target <- syn_map[[var]][syn_map[[var]] %in% names(stn_dt)]
+        syn_source <- syn_map[[var]][syn_map[[var]] %in% names(syn_dt)]
+        if (length(stn_target) && length(syn_source)) {
+          if (syn_source[1] != stn_target[1]) data.table::setnames(syn_dt, syn_source[1], stn_target[1])
+        }
+      }
+      syn_dt
+    }
+
     synthesize_day_hourly <- function(daily_row, tz_string, diurnal_method) {
       mm <- try(daily_to_minmax(daily_row[, .(yr, mon, day, temp, rh, ws, prec)]), silent = TRUE)
       if (inherits(mm, "try-error")) stop(paste("daily_to_minmax() failed:", as.character(mm)))
       names(mm) <- tolower(names(mm))
-      mm$id   <- if ("id"   %in% names(daily_row)) daily_row$id[1]   else "STN"
-      mm$lat  <- if ("lat"  %in% names(daily_row)) daily_row$lat[1]  else NA_real_
-      mm$long <- if ("long" %in% names(daily_row)) daily_row$long[1] else NA_real_
-      
-      fml  <- try(formalArgs(minmax_to_hourly), silent = TRUE)
+      # carry station metadata into the min/max structure
+      stn_id <- if ("id" %in% names(daily_row)) daily_row$id[1] else "STN"
+      stn_lat <- if ("lat" %in% names(daily_row)) suppressWarnings(as.numeric(daily_row$lat[1])) else NA_real_
+      stn_lon <- if ("lon" %in% names(daily_row)) {
+        suppressWarnings(as.numeric(daily_row$lon[1]))
+      } else if ("long" %in% names(daily_row)) suppressWarnings(as.numeric(daily_row$long[1])) else NA_real_
+      mm$id <- stn_id
+      mm$lat <- stn_lat
+      mm$long <- stn_lon
+      fml <- try(formalArgs(minmax_to_hourly), silent = TRUE)
       tz_off <- as.integer(format(as.POSIXct(Sys.time(), tz = tz_string), "%z")) / 100
       args <- list(mm, timezone = tz_off, verbose = FALSE, round_out = NA)
       if (!inherits(fml, "try-error") && "skip_invalid" %in% fml) args$skip_invalid <- TRUE
       if (!inherits(fml, "try-error")) {
-        if ("method"  %in% fml) args$method  <- diurnal_method
+        if ("method" %in% fml) args$method <- diurnal_method
         if ("diurnal" %in% fml) args$diurnal <- diurnal_method
       }
-      hr <- try(do.call(minmax_to_hourly, args), silent = TRUE)
+      hr <- try(suppressMessages(suppressWarnings(do.call(minmax_to_hourly, args))), silent = TRUE)
       if (inherits(hr, "try-error")) stop(paste("minmax_to_hourly() failed:", as.character(hr)))
-      if (!"timestamp" %in% names(hr)) {
-        hr[, timestamp := as.POSIXct(sprintf("%04d-%02d-%02d %02d:00:00", yr, mon, day, hr), tz = tz_string)]
-      }
+      # ensure timestamp
+      if (!"timestamp" %in% names(hr)) hr[, timestamp := as.POSIXct(sprintf("%04d-%02d-%02d %02d:00:00", yr, mon, day, hr), tz = tz_string)]
+      # **stamp station metadata** onto synthetic rows
+      if (!("id" %in% names(hr))) hr[, id := stn_id]
+      if (!("lat" %in% names(hr))) hr[, lat := stn_lat]
+      if ("long" %in% names(hr) && !("lon" %in% names(hr))) data.table::setnames(hr, "long", "lon")
+      if (!("lon" %in% names(hr))) hr[, lon := stn_lon]
       hr[]
     }
-    
+
     fill_hourly_gaps_with_diurnal <- function(src, tz_string, diurnal_method) {
-      dt   <- data.table::as.data.table(src)
+      dt <- data.table::as.data.table(src)
+      dt <- dt_prepare_for_add(dt)
       cols <- resolve_cols(dt)
       stopifnot(all(c(cols$yr, cols$mon, cols$day, cols$hr) %in% names(dt)))
-      
-      # Canonical timestamp from Y/M/D/H
-      dt[, timestamp := as.POSIXct(sprintf("%04d-%02d-%02d %02d:00:00",
-                                           as.integer(get(cols$yr)),
-                                           as.integer(get(cols$mon)),
-                                           as.integer(get(cols$day)),
-                                           as.integer(gsub("[^0-9-]", "", as.character(get(cols$hr))))),
-                                   tz = tz_string)]
-      
+      ts_new <- as.POSIXct(sprintf(
+        "%04d-%02d-%02d %02d:00:00",
+        as.integer(dt[[cols$yr]]), as.integer(dt[[cols$mon]]), as.integer(dt[[cols$day]]),
+        as.integer(gsub("[^0-9-]", "", as.character(dt[[cols$hr]])))
+      ), tz = tz_string)
+      set_col(dt, "timestamp", ts_new)
+      set_col(dt, "date", as.Date(dt$timestamp, tz = tz_string))
       stn_list <- if (!is.null(cols$id) && cols$id %in% names(dt)) split(dt, dt[[cols$id]]) else list(STN = dt)
-      
       fill_one_station <- function(stn_dt, stn_id) {
-        stn_dt[, date := as.Date(timestamp, tz = tz_string)]
+        stn_dt <- dt_prepare_for_add(stn_dt)
         day_stats <- stn_dt[, .(
-          n_hours   = data.table::uniqueN(as.integer(format(timestamp, "%H"))),
-          gap_count = { d <- as.numeric(diff(sort(timestamp)), units = "hours"); sum(d > 1 & d != 2) }
+          n_hours = data.table::uniqueN(as.integer(format(timestamp, "%H"))),
+          gap_count = {
+            d <- as.numeric(diff(sort(timestamp)), units = "hours")
+            sum(d > 1 & d != 2)
+          }
         ), by = date]
         need <- day_stats[gap_count > 0 | n_hours < 24, date]
-        if (!length(need)) return(stn_dt[, date := NULL][])
-        
+        if (!length(need)) {
+          return(stn_dt[, date := NULL][])
+        }
         synth_list <- vector("list", length(need))
         for (i in seq_along(need)) {
-          day_i   <- need[i]
-          day_dt  <- stn_dt[date == day_i]
+          day_i <- need[i]
+          day_dt <- stn_dt[date == day_i]
           daily_row <- make_daily_row(day_dt, cols)
           syn <- synthesize_day_hourly(daily_row, tz_string, diurnal_method)
           synth_list[[i]] <- syn
         }
         syn_all <- data.table::rbindlist(synth_list, fill = TRUE)
-        
-        # Merge: add missing timestamps; fill NA fields on existing timestamps
-        data.table::setkey(stn_dt, timestamp)
-        data.table::setkey(syn_all, timestamp)
-        
-        # add rows for truly missing timestamps (anti-join; safe)
-        missing_ts <- syn_all[!stn_dt, on = "timestamp"]$timestamp
-        if (length(missing_ts)) {
-          stn_dt <- data.table::rbindlist(list(stn_dt, syn_all[data.table::J(missing_ts)]), fill = TRUE)
+        syn_all <- align_syn_to_stn_names(stn_dt, syn_all, cols)
+        # Fallback: if ID/lat/lon missing in synthetic rows, backfill from station context
+        if (!("id" %in% names(syn_all))) syn_all[, id := stn_id]
+        if (!("lat" %in% names(syn_all))) {
+          stn_lat <- suppressWarnings(as.numeric(na.omit(stn_dt$lat)[1]))
+          syn_all[, lat := stn_lat]
         }
-        
-        # fill NA values in overlapping timestamps for core variables
-        core_fill <- intersect(c(cols$temp, cols$rh, cols$ws, cols$prec, "temp", "Rh", "Wspd", "prec"), names(stn_dt))
-        if (length(core_fill)) {
-          na_idx <- stn_dt[, .I[Reduce(`|`, lapply(.SD, is.na))], .SDcols = core_fill]
+        if ("long" %in% names(syn_all) && !("lon" %in% names(syn_all))) data.table::setnames(syn_all, "long", "lon")
+        if (!("lon" %in% names(syn_all))) {
+          stn_lon <- suppressWarnings(as.numeric(na.omit(if ("lon" %in% names(stn_dt)) stn_dt$lon else stn_dt$long)[1]))
+          syn_all[, lon := stn_lon]
+        }
+
+        # ---- Robust append: match missing hours by (id, Y/M/D/H), not raw timestamp ----
+        stn_dt[, `:=`(
+          year = as.integer(format(timestamp, "%Y")),
+          month = as.integer(format(timestamp, "%m")),
+          day = as.integer(format(timestamp, "%d")),
+          hour = as.integer(format(timestamp, "%H"))
+        )]
+        # derive Y/M/D/H in syn_all even if names differ
+        if (!("year" %in% names(syn_all))) syn_all[, year := as.integer(format(timestamp, "%Y"))]
+        if (!("month" %in% names(syn_all))) syn_all[, month := as.integer(format(timestamp, "%m"))]
+        if (!("day" %in% names(syn_all))) syn_all[, day := as.integer(format(timestamp, "%d"))]
+        if (!("hour" %in% names(syn_all))) {
+          hcol <- if ("hr" %in% names(syn_all)) "hr" else if ("hour" %in% names(syn_all)) "hour" else NULL
+          if (is.null(hcol)) syn_all[, hour := as.integer(format(timestamp, "%H"))] else syn_all[, hour := as.integer(get(hcol))]
+        }
+        # set keys; include id if present in both
+        if (("id" %in% names(stn_dt)) && ("id" %in% names(syn_all))) {
+          data.table::setkey(stn_dt, id, year, month, day, hour)
+          data.table::setkey(syn_all, id, year, month, day, hour)
+          missing_rows <- syn_all[!stn_dt, on = .(id, year, month, day, hour)]
+        } else {
+          data.table::setkey(stn_dt, year, month, day, hour)
+          data.table::setkey(syn_all, year, month, day, hour)
+          missing_rows <- syn_all[!stn_dt, on = .(year, month, day, hour)]
+        }
+        if (nrow(missing_rows)) {
+          stn_dt <- data.table::rbindlist(list(stn_dt, missing_rows), fill = TRUE)
+        }
+        # ensure ID is not NA on newly added rows
+        if ("id" %in% names(stn_dt)) {
+          stn_dt[is.na(id), id := stn_id]
+        }
+        # backfill NA core variables from syn_all where possible
+        candidate_vars <- unique(na.omit(c(
+          cols$temp, cols$rh, cols$ws, cols$prec,
+          "temp", "Temp", "temperature", "Temperature", "rh", "RH", "Rh", "relhum", "RelativeHumidity", "relativehumidity",
+          "ws", "Wspd", "WS", "wind", "Wind", "windspeed", "wspd", "prec", "rn_1", "Rain_24", "rain_24", "rain", "Rain", "p24", "P24"
+        )))
+        vars_in_stn <- intersect(candidate_vars, names(stn_dt))
+        vars_to_fill <- intersect(vars_in_stn, names(syn_all))
+        if (length(vars_to_fill)) {
+          na_idx <- stn_dt[, .I[Reduce(`|`, lapply(.SD, function(x) is.na(x) | is.nan(x)))], .SDcols = vars_to_fill]
           if (length(na_idx)) {
-            na_ts <- stn_dt$timestamp[na_idx]
-            fills <- syn_all[.(na_ts), on = "timestamp", nomatch = 0L]
-            stn_dt[na_idx, (core_fill) := fills[, ..core_fill]]
+            # build an index table to join by keys for NA rows
+            idx_tbl <- stn_dt[na_idx, .(id = if ("id" %in% names(stn_dt)) id else NA_character_, year, month, day, hour)]
+            if (("id" %in% names(syn_all)) && ("id" %in% names(idx_tbl))) {
+              fills <- syn_all[idx_tbl, on = .(id, year, month, day, hour), nomatch = 0L]
+            } else {
+              fills <- syn_all[idx_tbl, on = .(year, month, day, hour), nomatch = 0L]
+            }
+            if (nrow(fills)) stn_dt[na_idx, (vars_to_fill) := fills[, ..vars_to_fill]]
           }
         }
-        
         stn_dt[, date := NULL][]
       }
-      
       out_list <- Map(fill_one_station, stn_list, names(stn_list))
       out <- data.table::rbindlist(out_list, fill = TRUE)
-      safe_setorder(out, cols$id)
+      safe_setorder(out, cols$id %||% NULL)
       out[]
     }
-    
+
     daily_noon_is_complete <- function(src) {
-      dt   <- data.table::as.data.table(src)
+      dt <- data.table::as.data.table(src)
       cols <- resolve_cols(dt)
-      if (!all(c(cols$yr, cols$mon, cols$day, cols$hr) %in% names(dt))) return(FALSE)
-      
-      dt[, date := as.Date(sprintf("%04d-%02d-%02d", get(cols$yr), get(cols$mon), get(cols$day)))]
-      dt[, hr   := as.integer(gsub("[^0-9-]", "", as.character(get(cols$hr))))]
-      per_day <- dt[, .(has_noon = any(hr == 12L), noon_count = sum(hr == 12L)),
-                    by = .(id = if (!is.null(cols$id)) get(cols$id) else rep("STN", .N), date)]
-      all(per_day$has_noon & per_day$noon_count == 1L) &&
-        all(dt[, .(.is_seq_days(unique(date))), by = .(id = if (!is.null(cols$id)) get(cols$id) else rep("STN", .N))]$V1)
+      if (!all(c(cols$yr, cols$mon, cols$day, cols$hr) %in% names(dt))) {
+        return(FALSE)
+      }
+      dt[, date := as.Date(sprintf("%04d-%02d-%02d", dt[[cols$yr]], dt[[cols$mon]], dt[[cols$day]]))]
+      dt[, hr := as.integer(gsub("[^0-9-]", "", as.character(dt[[cols$hr]])))]
+      id_vec <- if (!is.null(cols$id) && cols$id %in% names(dt)) dt[[cols$id]] else rep.int("STN", nrow(dt))
+      per_day <- dt[, .(has_noon = any(hr == 12L), noon_count = sum(hr == 12L)), by = .(id = id_vec, date)]
+      all(per_day$has_noon & per_day$noon_count == 1L) && all(dt[, .(.is_seq_days(unique(date))), by = .(id = id_vec)]$V1)
     }
-    
+
     convert_daily_noon_to_hourly <- function(src, tz_string, diurnal_method) {
-      dt   <- data.table::as.data.table(src)
+      dt <- data.table::as.data.table(src)
       cols <- resolve_cols(dt)
       stopifnot(all(c(cols$yr, cols$mon, cols$day, cols$hr) %in% names(dt)))
-      dt[, hr := as.integer(gsub("[^0-9-]", "", as.character(get(cols$hr))))]
+      dt[, hr := as.integer(gsub("[^0-9-]", "", as.character(dt[[cols$hr]])))]
       noon <- dt[hr == 12L]
-      
+      id_vec_noon <- if (!is.null(cols$id) && cols$id %in% names(noon)) noon[[cols$id]] else rep.int("STN", nrow(noon))
       daily <- noon[, .(
-        id   = if (!is.null(cols$id)) get(cols$id) else rep("STN", .N),
-        lat  = if (!is.null(cols$lat)) suppressWarnings(as.numeric(get(cols$lat))) else NA_real_,
+        id = id_vec_noon,
+        lat = if (!is.null(cols$lat)) suppressWarnings(as.numeric(get(cols$lat))) else NA_real_,
         long = if (!is.null(cols$long)) suppressWarnings(as.numeric(get(cols$long))) else NA_real_,
-        yr   = suppressWarnings(as.integer(get(cols$yr))),
-        mon  = suppressWarnings(as.integer(get(cols$mon))),
-        day  = suppressWarnings(as.integer(get(cols$day))),
+        yr = suppressWarnings(as.integer(get(cols$yr))),
+        mon = suppressWarnings(as.integer(get(cols$mon))),
+        day = suppressWarnings(as.integer(get(cols$day))),
         temp = suppressWarnings(as.numeric(get(cols$temp))),
-        rh   = suppressWarnings(as.numeric(get(cols$rh))),
-        ws   = if (!is.null(cols$ws)) suppressWarnings(as.numeric(get(cols$ws))) else NA_real_,
+        rh = suppressWarnings(as.numeric(get(cols$rh))),
+        ws = if (!is.null(cols$ws)) suppressWarnings(as.numeric(get(cols$ws))) else NA_real_,
         prec = if (!is.null(cols$prec)) suppressWarnings(as.numeric(get(cols$prec))) else 0
       )]
-      
       convert_multi_station_daily_to_hourly(daily, tz_string, diurnal_method)$hourly
     }
-    
-    # ---- Detection (HOTFIX: hourly-first, safe datetime) ---------------------
+
+    promote_canonical_vars <- function(dt, cols) {
+      if (!("id" %in% names(dt)) && !is.null(cols$id) && cols$id %in% names(dt)) data.table::setnames(dt, cols$id, "id")
+      if (!("lat" %in% names(dt)) && !is.null(cols$lat) && cols$lat %in% names(dt)) data.table::setnames(dt, cols$lat, "lat")
+      if ("long" %in% names(dt) && !("lon" %in% names(dt))) data.table::setnames(dt, "long", "lon")
+      if (!("lon" %in% names(dt)) && !is.null(cols$long) && cols$long %in% names(dt)) data.table::setnames(dt, cols$long, "lon")
+      if (!("temp" %in% names(dt)) && !is.null(cols$temp) && cols$temp %in% names(dt)) data.table::setnames(dt, cols$temp, "temp")
+      if (!("rh" %in% names(dt)) && !is.null(cols$rh) && cols$rh %in% names(dt)) data.table::setnames(dt, cols$rh, "rh")
+      if (!("ws" %in% names(dt)) && !is.null(cols$ws) && cols$ws %in% names(dt)) data.table::setnames(dt, cols$ws, "ws")
+      if (!("prec" %in% names(dt))) {
+        prec_candidates <- intersect(c(cols$prec, "prec", "rn_1", "Rain_24", "rain_24", "rain", "p24", "P24"), names(dt))
+        if (length(prec_candidates)) data.table::setnames(dt, prec_candidates[1], "prec")
+      }
+      if (!("year" %in% names(dt)) && !is.null(cols$yr) && cols$yr %in% names(dt)) data.table::setnames(dt, cols$yr, "year")
+      if (!("month" %in% names(dt)) && !is.null(cols$mon) && cols$mon %in% names(dt)) data.table::setnames(dt, cols$mon, "month")
+      if (!("day" %in% names(dt)) && !is.null(cols$day) && cols$day %in% names(dt)) data.table::setnames(dt, cols$day, "day")
+      if (!("hour" %in% names(dt)) && !is.null(cols$hr) && cols$hr %in% names(dt)) data.table::setnames(dt, cols$hr, "hour")
+      dt[]
+    }
+
+    prune_to_canonical <- function(dt) {
+      keep <- c("id", "lat", "lon", "year", "month", "day", "hour", "temp", "rh", "ws", "prec", "timestamp")
+      present <- keep[keep %in% names(dt)]
+      dt <- dt[, ..present]
+      data.table::setcolorder(dt, present)
+      dt[]
+    }
+
+    validate_canonical <- function(dt) {
+      needed <- c("id", "lat", "lon", "year", "month", "day", "hour", "temp", "rh", "ws", "prec", "timestamp")
+      missing <- setdiff(needed, names(dt))
+      if (length(missing)) stop(sprintf("Canonical schema missing: %s", paste(missing, collapse = ", ")))
+      invisible(TRUE)
+    }
+
     detect_resolution <- function(df, tz_string) {
       dt <- data.table::as.data.table(df)
       rc <- resolve_cols(dt)
       reasons <- character()
-      
-      has_ymd  <- !is.null(rc$yr)  && rc$yr  %in% names(dt) &&
-        !is.null(rc$mon) && rc$mon %in% names(dt) &&
-        !is.null(rc$day) && rc$day %in% names(dt)
-      has_hour <- !is.null(rc$hr)  && rc$hr  %in% names(dt)
-      has_dt   <- !is.null(rc$datetime) && rc$datetime %in% names(dt)
+      message(sprintf("[Prepare][DEBUG] Names=%s", paste(names(dt), collapse = ", ")))
+      message(sprintf(
+        "[Prepare][DEBUG] Detector flags: has_ymd=%s has_hour=%s has_dt=%s has_date=%s",
+        !is.null(rc$yr) && rc$yr %in% names(dt), !is.null(rc$hr) && rc$hr %in% names(dt), !is.null(rc$datetime) && rc$datetime %in% names(dt), !is.null(rc$date) && rc$date %in% names(dt)
+      ))
+      has_ymd <- !is.null(rc$yr) && rc$yr %in% names(dt) && !is.null(rc$mon) && rc$mon %in% names(dt) && !is.null(rc$day) && rc$day %in% names(dt)
+      has_hour <- !is.null(rc$hr) && rc$hr %in% names(dt)
+      has_dt <- !is.null(rc$datetime) && rc$datetime %in% names(dt)
       has_date <- !is.null(rc$date) && rc$date %in% names(dt)
-      
-      # 1) HOURLY via Y/M/D/H (preferred; deterministic timestamp)
       if (has_ymd && has_hour) {
         hr_vals <- suppressWarnings(as.integer(gsub("[^0-9-]", "", as.character(dt[[rc$hr]]))))
-        dt[, timestamp := suppressWarnings(as.POSIXct(sprintf(
-          "%04d-%02d-%02d %02d:00:00",
-          as.integer(get(rc$yr)), as.integer(get(rc$mon)), as.integer(get(rc$day)), hr_vals
-        ), tz = tz_string))]
-        
-        # Detect disguised daily-one-hour (any fixed hr per day)
+        dt <- dt_prepare_for_add(dt)
+        set_col(dt, "timestamp", suppressWarnings(as.POSIXct(sprintf("%04d-%02d-%02d %02d:00:00", as.integer(dt[[rc$yr]]), as.integer(dt[[rc$mon]]), as.integer(dt[[rc$day]]), hr_vals), tz = tz_string)))
         date_vec <- suppressWarnings(as.Date(sprintf("%04d-%02d-%02d", dt[[rc$yr]], dt[[rc$mon]], dt[[rc$day]])))
-        base_dt <- data.table::data.table(
-          id   = if (!is.null(rc$id)) dt[[rc$id]] else rep("STN", nrow(dt)),
-          date = date_vec,
-          hr   = hr_vals
-        )
+        base_dt <- data.table::data.table(id = if (!is.null(rc$id) && rc$id %in% names(dt)) dt[[rc$id]] else rep.int("STN", nrow(dt)), date = date_vec, hr = hr_vals)
         per_day <- base_dt[, .(n_row = .N, uniq_hr = data.table::uniqueN(hr)), by = .(id, date)]
+        if (mean(per_day$uniq_hr > 1, na.rm = TRUE) >= 0.30 || data.table::uniqueN(hr_vals) >= 8L) {
+          id_col <- if (!is.null(rc$id) && rc$id %in% names(dt)) rc$id else NULL
+          if (!is.null(id_col)) {
+            data.table::setorderv(dt, c(id_col, "timestamp"))
+            gaps <- dt[, .(gap_count = .count_hour_gaps(timestamp), dup_count = .count_hour_dups(timestamp)), by = id_col]
+            data.table::setnames(gaps, id_col, "id")
+            if (any(gaps$gap_count > 0)) reasons <- c(reasons, sprintf("hourly gaps detected: %s", paste(gaps$id[gaps$gap_count > 0], collapse = ", ")))
+            if (any(gaps$dup_count > 0)) reasons <- c(reasons, sprintf("hourly duplicates detected: %s", paste(gaps$id[gaps$dup_count > 0], collapse = ", ")))
+            return(list(kind = "hourly", seq_ok = !any(gaps$gap_count > 0), reasons = reasons))
+          } else {
+            data.table::setorderv(dt, "timestamp")
+            d <- as.numeric(diff(dt$timestamp), units = "hours")
+            if (any(d > 1 & d != 2)) reasons <- c(reasons, "hourly gaps detected (no id)")
+            if (any(d == 0)) reasons <- c(reasons, "hourly duplicates detected (no id)")
+            return(list(kind = "hourly", seq_ok = !any(d > 1 & d != 2), reasons = reasons))
+          }
+        }
         per_stn <- base_dt[, .(uniq_hr_all_days = data.table::uniqueN(hr)), by = id]
-        is_daily_one_hour <- (all(per_day$n_row == 1L) &&
-                                all(per_day$uniq_hr == 1L) &&
-                                all(per_stn$uniq_hr_all_days == 1L))
+        is_daily_one_hour <- (mean(per_day$n_row == 1L) >= 0.95) && (mean(per_day$uniq_hr == 1L) >= 0.95) && all(per_stn$uniq_hr_all_days == 1L)
         if (is_daily_one_hour) {
           seq_ok <- base_dt[, .(seq_ok = .is_seq_days(unique(date))), by = id]
           if (any(!seq_ok$seq_ok)) reasons <- c(reasons, "daily_one_hour has gaps in days")
           return(list(kind = "daily_one_hour", seq_ok = all(seq_ok$seq_ok), reasons = reasons))
         }
-        
-        # Hourly sequential check
         id_col <- if (!is.null(rc$id) && rc$id %in% names(dt)) rc$id else NULL
         if (!is.null(id_col)) {
           data.table::setorderv(dt, c(id_col, "timestamp"))
-          gaps <- dt[, .(gap_count = .count_hour_gaps(timestamp),
-                         dup_count = .count_hour_dups(timestamp)), by = id_col]
+          gaps <- dt[, .(gap_count = .count_hour_gaps(timestamp), dup_count = .count_hour_dups(timestamp)), by = id_col]
           data.table::setnames(gaps, id_col, "id")
-          if (any(gaps$gap_count > 0)) {
-            reasons <- c(reasons, sprintf("hourly gaps detected: %s", paste(gaps$id[gaps$gap_count > 0], collapse=", ")))
-          }
-          if (any(gaps$dup_count > 0)) {
-            reasons <- c(reasons, sprintf("hourly duplicates detected: %s", paste(gaps$id[gaps$dup_count > 0], collapse=", ")))
-          }
+          if (any(gaps$gap_count > 0)) reasons <- c(reasons, sprintf("hourly gaps detected: %s", paste(gaps$id[gaps$gap_count > 0], collapse = ", ")))
+          if (any(gaps$dup_count > 0)) reasons <- c(reasons, sprintf("hourly duplicates detected: %s", paste(gaps$id[gaps$dup_count > 0], collapse = ", ")))
           return(list(kind = "hourly", seq_ok = !any(gaps$gap_count > 0), reasons = reasons))
         } else {
           data.table::setorderv(dt, "timestamp")
-          d <- as.numeric(diff(dt$timestamp), units="hours")
+          d <- as.numeric(diff(dt$timestamp), units = "hours")
           if (any(d > 1 & d != 2)) reasons <- c(reasons, "hourly gaps detected (no id)")
-          if (any(d == 0))         reasons <- c(reasons, "hourly duplicates detected (no id)")
+          if (any(d == 0)) reasons <- c(reasons, "hourly duplicates detected (no id)")
           return(list(kind = "hourly", seq_ok = !any(d > 1 & d != 2), reasons = reasons))
         }
       }
-      
-      # 2) HOURLY via datetime (only if Y/M/D/H is missing; safe parsing)
       if (has_dt) {
         x2 <- gsub("\\s*\\([^)]*\\)\\s*$", "", as.character(dt[[rc$datetime]]))
-        parsed <- tryCatch(
-          suppressWarnings(as.POSIXct(x2, tz = tz_string,
-                                      tryFormats = c(
-                                        "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M",
-                                        "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M",
-                                        "%H:%M %Y-%m-%d",    "%H:%M %Y/%m/%d",
-                                        "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ"
-                                      )
-          )),
-          error = function(e) rep(NA_real_, nrow(dt))
-        )
-        dt[, timestamp := parsed]
+        parsed <- tryCatch(suppressWarnings(as.POSIXct(x2, tz = tz_string, tryFormats = c("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S%z"))), error = function(e) rep(NA_real_, nrow(dt)))
+        set_col(dt, "timestamp", parsed)
         if (sum(!is.na(parsed)) == 0) {
           return(list(kind = "hourly", seq_ok = NA, reasons = c(reasons, "datetime present but unparsable")))
         }
         data.table::setorderv(dt, "timestamp")
-        d <- as.numeric(diff(dt$timestamp), units="hours")
+        d <- as.numeric(diff(dt$timestamp), units = "hours")
         if (any(d > 1 & d != 2)) reasons <- c(reasons, "hourly gaps detected (datetime)")
         return(list(kind = "hourly", seq_ok = !any(d > 1 & d != 2), reasons = reasons))
       }
-      
-      # 3) DAILY when hourly signatures absent
-      if (!is.null(rc$date) && rc$date %in% names(dt) || has_ymd) {
-        dts <- if (!is.null(rc$date) && rc$date %in% names(dt)) {
-          suppressWarnings(as.Date(dt[[rc$date]]))
-        } else {
-          suppressWarnings(as.Date(sprintf("%04d-%02d-%02d", dt[[rc$yr]], dt[[rc$mon]], dt[[rc$day]])))
+      if (!has_hour && !has_dt && has_ymd) {
+        dts <- if (!is.null(rc$date) && rc$date %in% names(dt)) suppressWarnings(as.Date(dt[[rc$date]])) else suppressWarnings(as.Date(sprintf("%04d-%02d-%02d", dt[[rc$yr]], dt[[rc$mon]], dt[[rc$day]])))
+        seq_ok <- {
+          d <- diff(sort(unique(dts)))
+          all(d == 1)
         }
-        seq_ok <- { d <- diff(sort(unique(dts))); all(d == 1) }
         return(list(kind = "daily", seq_ok = seq_ok, reasons = reasons))
       }
-      
-      # 4) Unknown (verbose names to help diagnose)
-      list(kind = "unknown", seq_ok = NA,
-           reasons = c(reasons, sprintf("unknown: names=%s", paste(names(dt), collapse=", "))))
+      list(kind = "unknown", seq_ok = NA, reasons = c(reasons, sprintf("unknown: names=%s", paste(names(dt), collapse = ", "))))
     }
-    
-    # ---- Provenance ----------------------------------------------------------
+
     attach_provenance <- function(out, source, conversion, tz_string, offset_policy, prepared_at, offset_hours = NA) {
       tz_off <- if (is.na(offset_hours)) as.integer(format(as.POSIXct(Sys.time(), tz = tz_string), "%z")) / 100 else offset_hours
-      attr(out, "provenance") <- list(
-        source = source,
-        conversion = conversion,
-        tz = tz_string,
-        offset_policy = offset_policy,
-        offset_hours = tz_off,
-        prepared_at = prepared_at
-      )
+      attr(out, "provenance") <- list(source = source, conversion = conversion, tz = tz_string, offset_policy = offset_policy, offset_hours = tz_off, prepared_at = prepared_at)
       out
     }
-    
-    # ---- Reactive state ------------------------------------------------------
-    raw_like_rv  <- shiny::reactiveVal(NULL)
+
+    raw_like_rv <- shiny::reactiveVal(NULL)
     daily_src_rv <- shiny::reactiveVal(NULL)
-    meta_rv      <- shiny::reactiveVal(list(
-      kind = NA, converted = FALSE, failed = FALSE,
-      log = character(),
-      t_detect_ms = NA_real_, t_convert_ms = NA_real_, t_total_ms = NA_real_,
-      n_rows_in = NA_integer_, n_rows_out = NA_integer_, station_count = NA_integer_,
-      run_id = NA_integer_, started_at = NA, finished_at = NA,
-      tz = NA_character_, offset_policy = NA_character_, diurnal = NA_character_
-    ))
+    meta_rv <- shiny::reactiveVal(list(kind = NA, converted = FALSE, failed = FALSE, log = character(), t_detect_ms = NA_real_, t_convert_ms = NA_real_, t_total_ms = NA_real_, n_rows_in = NA_integer_, n_rows_out = NA_integer_, station_count = NA_integer_, run_id = NA_integer_, started_at = NA, finished_at = NA, tz = NA_character_, offset_policy = NA_character_, diurnal = NA_character_))
     last_kind_rv <- shiny::reactiveVal(NULL)
-    run_id_rv    <- shiny::reactiveVal(0L)
-    gap_observer_rv <- shiny::reactiveVal(NULL)  # destroy & recreate per upload
-    
-    prep_ready <- shiny::eventReactive(
-      list(raw_file(), mapping$col_temp(), tz$tz_use(), diurnal_method_reactive()),
+    run_id_rv <- shiny::reactiveVal(0L)
+    gap_observer_rv <- shiny::reactiveVal(NULL)
+    busy_rv <- shiny::reactiveVal(FALSE)
+
+    mapping_fp <- shiny::reactive({
+      paste0(.map_get(mapping$col_year) %||% "", .map_get(mapping$col_month) %||% "", .map_get(mapping$col_day) %||% "", .map_get(mapping$col_hour) %||% "", .map_get(mapping$col_datetime) %||% "", .map_get(mapping$col_date) %||% "", .map_get(mapping$col_id) %||% "", .map_get(mapping$col_temp) %||% "", .map_get(mapping$col_rh) %||% "", .map_get(mapping$col_ws) %||% "", .map_get(mapping$col_prec) %||% "", .map_get(mapping$col_lat) %||% "", .map_get(mapping$col_lon) %||% "")
+    })
+
+    prep_ready <- shiny::eventReactive(list(raw_file(), tz$tz_use(), diurnal_method_reactive(), mapping_fp()),
       {
         shiny::req(raw_file(), nzchar(tz$tz_use()))
-        list(
-          src = raw_file(),
-          tz_string = tz$tz_use(),
-          offset_policy = tz$tz_offset_policy(),
-          diurnal = diurnal_method_reactive() %||% "BT-default"
-        )
+        list(src = raw_file(), tz_string = tz$tz_use(), offset_policy = tz$tz_offset_policy(), diurnal = diurnal_method_reactive() %||% "BT-default")
       },
       ignoreInit = TRUE
     )
-    
     debounced_ready <- shiny::debounce(prep_ready, 500)
-    
-    # ---- Orchestrator --------------------------------------------------------
+
     shiny::observeEvent(debounced_ready(), {
-      # clear any modal and old observer
-      shiny::removeModal()
-      prev_obs <- gap_observer_rv()
-      if (!is.null(prev_obs)) { prev_obs$destroy(); gap_observer_rv(NULL) }
-      
-      args <- debounced_ready()
-      src <- data.table::as.data.table(args$src)
-      tz_string     <- args$tz_string
-      offset_policy <- args$offset_policy
-      dia           <- args$diurnal
-      
-      started_at    <- Sys.time()
-      t_total_start <- proc.time()
-      logs          <- character()
-      
-      n_rows_in     <- nrow(src)
-      station_count <- if ("id" %in% names(src)) length(unique(src$id)) else 1L
-      
-      # Detection
-      t_det_start  <- proc.time()
-      det          <- detect_resolution(src, tz_string)
-      t_detect_ms  <- as.numeric((proc.time() - t_det_start)[["elapsed"]]) * 1000
-      if (length(det$reasons)) logs <- c(logs, paste0("[Prepare][INFO] Detect reasons: ", paste(det$reasons, collapse = "; ")))
-      
-      prev <- last_kind_rv(); if (!identical(prev, det$kind)) last_kind_rv(det$kind)
-      run_id <- run_id_rv() + 1L; run_id_rv(run_id)
-      
-      # 1) HOURLY & sequential OK -> passthrough
-      if (det$kind == "hourly" && isTRUE(det$seq_ok)) {
-        emit_toast("Detected HOURLY input. No conversion performed.", "message", 4)
-        out <- attach_provenance(src, "hourly", "passthrough", tz_string, offset_policy, started_at, offset_hours = NA)
-        raw_like_rv(out); daily_src_rv(NULL)
-        
-        finished_at <- Sys.time()
-        t_total_ms  <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
-        meta_rv(list(
-          kind = "hourly", converted = FALSE, failed = FALSE,
-          tz = tz_string, offset_policy = offset_policy, diurnal = dia,
-          log = logs, t_detect_ms = t_detect_ms, t_convert_ms = 0.0,
-          t_total_ms = t_total_ms, n_rows_in = n_rows_in, n_rows_out = nrow(out),
-          station_count = station_count, run_id = run_id,
-          started_at = started_at, finished_at = finished_at
-        ))
+      if (isTRUE(busy_rv())) {
         return()
       }
-      
-      # 2) HOURLY with gaps -> offer actions (fill gaps or replace stream via daily NOON)
+      busy_rv(TRUE)
+      on.exit(busy_rv(FALSE), add = TRUE)
+      shiny::removeModal()
+      prev_obs <- gap_observer_rv()
+      if (!is.null(prev_obs)) {
+        prev_obs$destroy()
+        gap_observer_rv(NULL)
+      }
+
+      args <- debounced_ready()
+      src <- data.table::as.data.table(args$src)
+      tz_string <- args$tz_string
+      offset_policy <- args$offset_policy
+      dia <- args$diurnal
+      started_at <- Sys.time()
+      t_total_start <- proc.time()
+      logs <- character()
+      n_rows_in <- nrow(src)
+      station_count <- if ("id" %in% names(src)) length(unique(src$id)) else 1L
+
+      t_det_start <- proc.time()
+      det <- detect_resolution(src, tz_string)
+      t_detect_ms <- as.numeric((proc.time() - t_det_start)[["elapsed"]]) * 1000
+      if (length(det$reasons)) logs <- c(logs, paste0("[Prepare][INFO] Detect reasons: ", paste(det$reasons, collapse = "; ")))
+      prev <- last_kind_rv()
+      if (!identical(prev, det$kind)) last_kind_rv(det$kind)
+      run_id <- run_id_rv() + 1L
+      run_id_rv(run_id)
+
+      if (det$kind == "hourly" && isTRUE(det$seq_ok)) {
+        emit_toast(sprintf("Detected HOURLY input — %d rows across %d station(s). No conversion performed.", n_rows_in, station_count), "message", 4)
+        out_dt <- data.table::as.data.table(src)
+        cols_out <- resolve_cols(out_dt)
+        out_dt <- normalize_types_hourly(out_dt, cols_out)
+        out_dt <- tryCatch(canonize_time_columns(out_dt, tz_string, cols_out), error = function(e) {
+          emit_err("canonize_time_columns(passthrough)", e)
+          out_dt
+        })
+        cols_out <- resolve_cols(out_dt)
+        out_dt <- promote_canonical_vars(out_dt, cols_out)
+        out_dt <- prune_to_canonical(out_dt)
+        try(validate_canonical(out_dt), silent = TRUE)
+        out <- attach_provenance(out_dt, "hourly", "passthrough", tz_string, offset_policy, started_at, offset_hours = NA)
+        raw_like_rv(out)
+        daily_src_rv(NULL)
+        finished_at <- Sys.time()
+        t_total_ms <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
+        meta_rv(list(kind = "hourly", converted = FALSE, failed = FALSE, tz = tz_string, offset_policy = offset_policy, diurnal = dia, log = logs, t_detect_ms = t_detect_ms, t_convert_ms = 0.0, t_total_ms = t_total_ms, n_rows_in = n_rows_in, n_rows_out = nrow(out), station_count = station_count, run_id = run_id, started_at = started_at, finished_at = finished_at))
+        return()
+      }
+
       if (det$kind == "hourly" && !isTRUE(det$seq_ok)) {
+        cols <- resolve_cols(src)
+        src <- dt_prepare_for_add(src)
+        ts_src <- as.POSIXct(sprintf("%04d-%02d-%02d %02d:00:00", as.integer(src[[cols$yr]]), as.integer(src[[cols$mon]]), as.integer(src[[cols$day]]), as.integer(gsub("[^0-9-]", "", as.character(src[[cols$hr]])))), tz = tz_string)
+        set_col(src, "timestamp", ts_src)
+        set_col(src, "date", as.Date(src$timestamp, tz = tz_string))
+        id_vec_src <- if (!is.null(cols$id) && cols$id %in% names(src)) src[[cols$id]] else rep.int("STN", nrow(src))
+        day_stats <- src[, .(
+          n_hours = data.table::uniqueN(as.integer(format(timestamp, "%H"))),
+          gap_count = {
+            d <- as.numeric(diff(sort(timestamp)), units = "hours")
+            sum(d > 1 & d != 2)
+          },
+          dup_count = {
+            d <- as.numeric(diff(sort(timestamp)), units = "hours")
+            sum(d == 0)
+          }
+        ), by = .(id = id_vec_src, date)]
+        distinct_days <- data.table::uniqueN(day_stats$date)
+        days_with_gaps <- sum(day_stats$gap_count > 0 | day_stats$n_hours < 24)
         can_replace <- daily_noon_is_complete(src)
-        
-        choices <- c(
-          "Stop and let me fix the source file" = "stop",
-          "Fill only the missing hours (daily→hourly for gaps)" = "fill_gaps"
-        )
-        if (can_replace) {
-          choices <- c(choices, "Replace entire stream: use daily NOON (hr=12) and convert to hourly" = "replace_stream")
-        }
-        
+        choices <- c("stop" = "Stop and let me fix the source file", "fill_gaps" = "Fill only the missing hours (daily→hourly for gaps)")
+        if (can_replace) choices <- c(choices, "replace_stream" = "Replace entire stream: use daily NOON (hr=12) and convert to hourly")
         shiny::showModal(shiny::modalDialog(
-          title = "Hourly sequence has gaps",
+          title = sprintf("Hourly sequence has gaps — %d rows, %d distinct day(s) (%d station%s)", n_rows_in, distinct_days, station_count, if (station_count == 1) "" else "s"),
+          shiny::div(shiny::tags$p(sprintf("Summary: %d of %d day(s) have gaps or <24 hours; duplicates on %d day(s).", days_with_gaps, distinct_days, sum(day_stats$dup_count > 0))), shiny::tags$details(shiny::tags$summary("Show first 10 affected days"), shiny::HTML({
+            affected <- day_stats[gap_count > 0 | n_hours < 24][order(date)][1:min(10L, .N)]
+            if (!nrow(affected)) "<em>No per-day issues detected (unexpected).</em>" else paste(sprintf("%s — %s: hours=%d, gaps=%d, dups=%d", affected$id, as.character(affected$date), affected$n_hours, affected$gap_count, affected$dup_count), collapse = "<br/>")
+          }))),
           shiny::radioButtons(ns("gap_policy"), "Choose an action:", choices = choices, selected = "fill_gaps"),
           footer = shiny::tagList(shiny::modalButton("Cancel"), shiny::actionButton(ns("apply_gap_policy"), "Apply")),
           easyClose = TRUE
         ))
-        
-        gap_obs <- shiny::observeEvent(input$apply_gap_policy, {
-          shiny::removeModal()
-          choice <- input$gap_policy
-          
-          if (identical(choice, "stop")) {
-            emit_toast("Stopped. Please fix the gaps in your source file.", "warning", 6)
-            raw_like_rv(data.frame()); daily_src_rv(NULL)
-            
-            finished_at <- Sys.time()
-            t_total_ms  <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
-            meta_rv(list(
-              kind = "hourly", converted = FALSE, failed = TRUE,
-              tz = tz_string, offset_policy = offset_policy, diurnal = dia,
-              log = c(logs, "[Prepare] User chose STOP."), t_detect_ms = t_detect_ms, t_convert_ms = 0.0,
-              t_total_ms = t_total_ms, n_rows_in = n_rows_in, n_rows_out = 0L,
-              station_count = station_count, run_id = run_id,
-              started_at = started_at, finished_at = finished_at
-            ))
-            return()
-          }
-          
-          if (identical(choice, "replace_stream")) {
-            emit_toast(sprintf("Replacing entire stream using daily NOON and converting to HOURLY (%s)…", dia), "message", 6)
-            t_conv_start <- proc.time()
-            out <- try(convert_daily_noon_to_hourly(src, tz_string, dia), silent = FALSE)
-            t_convert_ms <- as.numeric((proc.time() - t_conv_start)[["elapsed"]]) * 1000
-            
-            if (inherits(out, "try-error") || is.null(out) || !nrow(out)) {
-              emit_toast("Daily NOON → Hourly replacement failed.", "error", 6)
+        gap_obs <- shiny::observeEvent(input$apply_gap_policy,
+          {
+            shiny::removeModal()
+            choice <- input$gap_policy
+            if (identical(choice, "Stop and let me fix the source file") || identical(choice, "stop")) {
+              emit_toast("Stopped. Please fix the gaps in your source file.", "warning", 6)
               raw_like_rv(data.frame())
+              daily_src_rv(NULL)
               finished_at <- Sys.time()
-              t_total_ms  <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
-              meta_rv(list(
-                kind = "hourly", converted = TRUE, failed = TRUE,
-                tz = tz_string, offset_policy = offset_policy, diurnal = dia,
-                log = c(logs, "[Prepare] Replace stream failed."), t_detect_ms = t_detect_ms, t_convert_ms = t_convert_ms,
-                t_total_ms = t_total_ms, n_rows_in = n_rows_in, n_rows_out = 0L,
-                station_count = station_count, run_id = run_id,
-                started_at = started_at, finished_at = finished_at
-              ))
+              t_total_ms <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
+              meta_rv(list(kind = "hourly", converted = FALSE, failed = TRUE, tz = tz_string, offset_policy = offset_policy, diurnal = dia, log = c(logs, "[Prepare] User chose STOP."), t_detect_ms = t_detect_ms, t_convert_ms = 0.0, t_total_ms = t_total_ms, n_rows_in = n_rows_in, n_rows_out = 0L, station_count = station_count, run_id = run_id, started_at = started_at, finished_at = finished_at))
               return()
             }
-            
-            out <- attach_provenance(out, "hourly", paste0("replace_stream(dailyNoon→hourly:", dia, ")"),
-                                     tz_string, offset_policy, started_at)
-            raw_like_rv(out); daily_src_rv(NULL)
-            
+            if (identical(choice, "Replace entire stream: use daily NOON (hr=12) and convert to hourly") || identical(choice, "replace_stream")) {
+              emit_toast(sprintf("Replacing entire stream using daily NOON and converting to HOURLY (%s)…", dia), "message", 6)
+              t_conv_start <- proc.time()
+              out <- try(convert_daily_noon_to_hourly(src, tz_string, dia), silent = FALSE)
+              t_convert_ms <- as.numeric((proc.time() - t_conv_start)[["elapsed"]]) * 1000
+              if (inherits(out, "try-error") || is.null(out) || !nrow(out)) {
+                emit_err("replace_stream", simpleError("Daily NOON → Hourly replacement failed."))
+                raw_like_rv(data.frame())
+                finished_at <- Sys.time()
+                t_total_ms <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
+                meta_rv(list(kind = "hourly", converted = TRUE, failed = TRUE, tz = tz_string, offset_policy = offset_policy, diurnal = dia, log = c(logs, "[Prepare] Replace stream failed."), t_detect_ms = t_detect_ms, t_convert_ms = t_convert_ms, t_total_ms = t_total_ms, n_rows_in = n_rows_in, n_rows_out = 0L, station_count = station_count, run_id = run_id, started_at = started_at, finished_at = finished_at))
+                return()
+              }
+              cols_out <- resolve_cols(out)
+              out <- normalize_types_hourly(out, cols_out)
+              out <- tryCatch(canonize_time_columns(out, tz_string, cols_out), error = function(e) {
+                emit_err("canonize_time_columns(replace)", e)
+                out
+              })
+              cols_out <- resolve_cols(out)
+              out <- promote_canonical_vars(out, cols_out)
+              out <- prune_to_canonical(out)
+              try(validate_canonical(out), silent = TRUE)
+              out <- attach_provenance(out, "hourly", paste0("replace_stream(dailyNoon→hourly:", dia, ")"), tz_string, offset_policy, started_at)
+              raw_like_rv(out)
+              daily_src_rv(NULL)
+              finished_at <- Sys.time()
+              t_total_ms <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
+              meta_rv(list(kind = "hourly", converted = TRUE, failed = FALSE, tz = tz_string, offset_policy = offset_policy, diurnal = dia, log = c(logs, "[Prepare] Replaced entire stream via daily NOON."), t_detect_ms = t_detect_ms, t_convert_ms = t_convert_ms, t_total_ms = t_total_ms, n_rows_in = n_rows_in, n_rows_out = nrow(out), station_count = station_count, run_id = run_id, started_at = started_at, finished_at = finished_at))
+              emit_toast(sprintf("Replaced with %s hourly rows.", nrow(out)), "message", 5)
+              return()
+            }
+            emit_toast(sprintf("Filling missing hours using daily→hourly (%s)…", dia), "message", 6)
+            t_conv_start <- proc.time()
+            out <- try(fill_hourly_gaps_with_diurnal(src, tz_string, dia), silent = FALSE)
+            t_convert_ms <- as.numeric((proc.time() - t_conv_start)[["elapsed"]]) * 1000
+            if (inherits(out, "try-error") || is.null(out) || !nrow(out)) {
+              emit_err("gap_fill", simpleError("Gap filling failed."))
+              raw_like_rv(data.frame())
+              finished_at <- Sys.time()
+              t_total_ms <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
+              meta_rv(list(kind = "hourly", converted = TRUE, failed = TRUE, tz = tz_string, offset_policy = offset_policy, diurnal = dia, log = c(logs, "[Prepare] Gap fill failed."), t_detect_ms = t_detect_ms, t_convert_ms = t_convert_ms, t_total_ms = t_total_ms, n_rows_in = n_rows_in, n_rows_out = 0L, station_count = station_count, run_id = run_id, started_at = started_at, finished_at = finished_at))
+              return()
+            }
+            cols_out <- resolve_cols(out)
+            out <- normalize_types_hourly(out, cols_out)
+            out <- tryCatch(canonize_time_columns(out, tz_string, cols_out), error = function(e) {
+              emit_err("canonize_time_columns(fill_gaps)", e)
+              out
+            })
+            cols_out <- resolve_cols(out)
+            out <- promote_canonical_vars(out, cols_out)
+            out <- prune_to_canonical(out)
+            try(validate_canonical(out), silent = TRUE)
+            out <- attach_provenance(out, "hourly", paste0("gapFill(daily→hourly:", dia, ")"), tz_string, offset_policy, started_at)
+            raw_like_rv(out)
+            daily_src_rv(NULL)
             finished_at <- Sys.time()
-            t_total_ms  <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
-            meta_rv(list(
-              kind = "hourly", converted = TRUE, failed = FALSE,
-              tz = tz_string, offset_policy = offset_policy, diurnal = dia,
-              log = c(logs, "[Prepare] Replaced entire stream via daily NOON."), t_detect_ms = t_detect_ms, t_convert_ms = t_convert_ms,
-              t_total_ms = t_total_ms, n_rows_in = n_rows_in, n_rows_out = nrow(out),
-              station_count = station_count, run_id = run_id,
-              started_at = started_at, finished_at = finished_at
-            ))
-            emit_toast(sprintf("Replaced with %s hourly rows.", nrow(out)), "message", 5)
+            t_total_ms <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
+            meta_rv(list(kind = "hourly", converted = TRUE, failed = FALSE, tz = tz_string, offset_policy = offset_policy, diurnal = dia, log = c(logs, "[Prepare] Filled missing hours using daily→hourly."), t_detect_ms = t_detect_ms, t_convert_ms = t_convert_ms, t_total_ms = t_total_ms, n_rows_in = n_rows_in, n_rows_out = nrow(out), station_count = station_count, run_id = run_id, started_at = started_at, finished_at = finished_at))
+            emit_toast(sprintf("Filled gaps. Output has %s hourly rows.", nrow(out)), "message", 5)
             return()
-          }
-          
-          # default / fill_gaps
-          emit_toast(sprintf("Filling missing hours using daily→hourly (%s)…", dia), "message", 6)
-          t_conv_start <- proc.time()
-          out <- try(fill_hourly_gaps_with_diurnal(src, tz_string, dia), silent = FALSE)
-          t_convert_ms <- as.numeric((proc.time() - t_conv_start)[["elapsed"]]) * 1000
-          
-          if (inherits(out, "try-error") || is.null(out) || !nrow(out)) {
-            emit_toast("Gap filling failed.", "error", 6)
-            raw_like_rv(data.frame())
-            finished_at <- Sys.time()
-            t_total_ms  <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
-            meta_rv(list(
-              kind = "hourly", converted = TRUE, failed = TRUE,
-              tz = tz_string, offset_policy = offset_policy, diurnal = dia,
-              log = c(logs, "[Prepare] Gap fill failed."), t_detect_ms = t_detect_ms, t_convert_ms = t_convert_ms,
-              t_total_ms = t_total_ms, n_rows_in = n_rows_in, n_rows_out = 0L,
-              station_count = station_count, run_id = run_id,
-              started_at = started_at, finished_at = finished_at
-            ))
-            return()
-          }
-          
-          out <- attach_provenance(out, "hourly", paste0("gapFill(daily→hourly:", dia, ")"),
-                                   tz_string, offset_policy, started_at)
-          raw_like_rv(out); daily_src_rv(NULL)
-          
-          finished_at <- Sys.time()
-          t_total_ms  <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
-          meta_rv(list(
-            kind = "hourly", converted = TRUE, failed = FALSE,
-            tz = tz_string, offset_policy = offset_policy, diurnal = dia,
-            log = c(logs, "[Prepare] Filled missing hours using daily→hourly."), t_detect_ms = t_detect_ms, t_convert_ms = t_convert_ms,
-            t_total_ms = t_total_ms, n_rows_in = n_rows_in, n_rows_out = nrow(out),
-            station_count = station_count, run_id = run_id,
-            started_at = started_at, finished_at = finished_at
-          ))
-          emit_toast(sprintf("Filled gaps. Output has %s hourly rows.", nrow(out)), "message", 5)
-          return()
-        }, once = TRUE, ignoreInit = TRUE)
-        
+          },
+          once = TRUE,
+          ignoreInit = TRUE
+        )
         gap_observer_rv(gap_obs)
         return()
       }
-      
-      # 3) DAILY_ONE_HOUR -> treat as DAILY and convert
+
       if (det$kind == "daily_one_hour") {
         emit_toast(sprintf("Detected DAILY (fixed-hour) input. Converting to HOURLY (%s)…", dia), "message", 5)
-        logs <- c(logs, "[Prepare] Detected DAILY (one-hour-per-day) input.",
-                  if (isTRUE(det$seq_ok)) "[Prepare] Daily sequence looks continuous." else "[Prepare][WARN] Daily sequence has gaps.",
-                  "[Prepare] Converting to HOURLY …")
-        
-        dt   <- data.table::as.data.table(src)
-        rc   <- resolve_cols(dt)
-        dt[, date := as.Date(sprintf("%04d-%02d-%02d", get(rc$yr), get(rc$mon), get(rc$day)))]
-        daily <- dt[, make_daily_row(.SD, rc),
-                    by = .(id_group = if (!is.null(rc$id)) get(rc$id) else rep("STN", .N), date)]
+        logs <- c(logs, "[Prepare] Detected DAILY (one-hour-per-day) input.", if (isTRUE(det$seq_ok)) "[Prepare] Daily sequence looks continuous." else "[Prepare][WARN] Daily sequence has gaps.", "[Prepare] Converting to HOURLY …")
+        dt <- data.table::as.data.table(src)
+        rc <- resolve_cols(dt)
+        dt[, date := as.Date(sprintf("%04d-%02d-%02d", dt[[rc$yr]], dt[[rc$mon]], dt[[rc$day]]))]
+        id_vec_dt <- if (!is.null(rc$id) && rc$id %in% names(dt)) dt[[rc$id]] else rep.int("STN", nrow(dt))
+        daily <- dt[, make_daily_row(.SD, rc), by = .(id_group = id_vec_dt, date)]
         daily[, id_group := NULL]
-        
         t_conv_start <- proc.time()
-        res <- try(convert_multi_station_daily_to_hourly(daily, tz_string, dia), silent = FALSE)
+        res <- try(convert_multi_station_daily_to_hourly(daily, tz_string, dia), silent = TRUE)
         t_convert_ms <- as.numeric((proc.time() - t_conv_start)[["elapsed"]]) * 1000
-        
         if (inherits(res, "try-error") || is.null(res$hourly) || !nrow(res$hourly)) {
-          emit_toast("Daily→Hourly conversion failed.", "error", 6)
+          emit_err("daily_one_hour→hourly", simpleError("Daily→Hourly conversion failed."))
           raw_like_rv(data.frame())
           finished_at <- Sys.time()
-          t_total_ms  <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
-          meta_rv(list(
-            kind = "daily_one_hour", converted = TRUE, failed = TRUE,
-            tz = tz_string, offset_policy = offset_policy, diurnal = dia,
-            log = logs, t_detect_ms = t_detect_ms, t_convert_ms = t_convert_ms,
-            t_total_ms = t_total_ms, n_rows_in = n_rows_in, n_rows_out = 0L,
-            station_count = station_count, run_id = run_id,
-            started_at = started_at, finished_at = finished_at
-          ))
+          t_total_ms <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
+          meta_rv(list(kind = "daily_one_hour", converted = TRUE, failed = TRUE, tz = tz_string, offset_policy = offset_policy, diurnal = dia, log = logs, t_detect_ms = t_detect_ms, t_convert_ms = t_convert_ms, t_total_ms = t_total_ms, n_rows_in = n_rows_in, n_rows_out = 0L, station_count = station_count, run_id = run_id, started_at = started_at, finished_at = finished_at))
           return()
         }
-        
-        out <- attach_provenance(res$hourly, "daily_one_hour", paste0("daily→hourly(", dia, ")"),
-                                 tz_string, offset_policy, started_at, offset_hours = res$tz_off)
+        out <- data.table::as.data.table(res$hourly)
+        cols_out <- resolve_cols(out)
+        out <- normalize_types_hourly(out, cols_out)
+        out <- tryCatch(canonize_time_columns(out, tz_string, cols_out), error = function(e) {
+          emit_err("canonize_time_columns(daily_one_hour)", e)
+          out
+        })
+        cols_out <- resolve_cols(out)
+        out <- promote_canonical_vars(out, cols_out)
+        out <- prune_to_canonical(out)
+        try(validate_canonical(out), silent = TRUE)
+        out <- attach_provenance(out, "daily_one_hour", paste0("daily→hourly(", dia, ")"), tz_string, offset_policy, started_at, offset_hours = res$tz_off)
         raw_like_rv(out)
-        
         finished_at <- Sys.time()
-        t_total_ms  <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
-        meta_rv(list(
-          kind = "daily_one_hour", converted = TRUE, failed = FALSE,
-          tz = tz_string, offset_policy = offset_policy, diurnal = dia,
-          log = c(logs, res$logs), t_detect_ms = t_detect_ms, t_convert_ms = t_convert_ms,
-          t_total_ms = t_total_ms, n_rows_in = n_rows_in, n_rows_out = nrow(out),
-          station_count = station_count, run_id = run_id,
-          started_at = started_at, finished_at = finished_at
-        ))
+        t_total_ms <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
+        meta_rv(list(kind = "daily_one_hour", converted = TRUE, failed = FALSE, tz = tz_string, offset_policy = offset_policy, diurnal = dia, log = c(logs, res$logs), t_detect_ms = t_detect_ms, t_convert_ms = t_convert_ms, t_total_ms = t_total_ms, n_rows_in = n_rows_in, n_rows_out = nrow(out), station_count = station_count, run_id = run_id, started_at = started_at, finished_at = finished_at))
         emit_toast(sprintf("Converted %s days to %s hourly rows.", nrow(daily), nrow(out)), "message", 5)
         return()
       }
-      
-      # 4) DAILY -> convert to HOURLY
+
       if (det$kind == "daily") {
         emit_toast(sprintf("Detected DAILY input. Converting to HOURLY (%s)…", dia), "message", 5)
-        logs <- c(logs, "[Prepare] Detected DAILY input.",
-                  if (isTRUE(det$seq_ok)) "[Prepare] Daily sequence looks continuous." else "[Prepare][WARN] Daily sequence has gaps.",
-                  "[Prepare] Converting to HOURLY …")
-        
+        logs <- c(logs, "[Prepare] Detected DAILY input.", if (isTRUE(det$seq_ok)) "[Prepare] Daily sequence looks continuous." else "[Prepare][WARN] Daily sequence has gaps.", "[Prepare] Converting to HOURLY …")
         t_conv_start <- proc.time()
-        res <- try(convert_multi_station_daily_to_hourly(src, tz_string, dia), silent = FALSE)
+        res <- try(convert_multi_station_daily_to_hourly(src, tz_string, dia), silent = TRUE)
         t_convert_ms <- as.numeric((proc.time() - t_conv_start)[["elapsed"]]) * 1000
-        
         if (inherits(res, "try-error") || is.null(res$hourly) || !nrow(res$hourly)) {
-          emit_toast("Daily→Hourly conversion failed.", "error", 6)
+          emit_err("daily→hourly", simpleError("Daily→Hourly conversion failed."))
           raw_like_rv(data.frame())
           finished_at <- Sys.time()
-          t_total_ms  <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
-          meta_rv(list(
-            kind = "daily", converted = TRUE, failed = TRUE,
-            tz = tz_string, offset_policy = offset_policy, diurnal = dia,
-            log = logs, t_detect_ms = t_detect_ms, t_convert_ms = t_convert_ms,
-            t_total_ms = t_total_ms, n_rows_in = n_rows_in, n_rows_out = 0L,
-            station_count = station_count, run_id = run_id,
-            started_at = started_at, finished_at = finished_at
-          ))
+          t_total_ms <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
+          meta_rv(list(kind = "daily", converted = TRUE, failed = TRUE, tz = tz_string, offset_policy = offset_policy, diurnal = dia, log = logs, t_detect_ms = t_detect_ms, t_convert_ms = t_convert_ms, t_total_ms = t_total_ms, n_rows_in = n_rows_in, n_rows_out = 0L, station_count = station_count, run_id = run_id, started_at = started_at, finished_at = finished_at))
           return()
         }
-        
-        out <- attach_provenance(res$hourly, "daily", paste0("daily→hourly(", dia, ")"),
-                                 tz_string, offset_policy, started_at, offset_hours = res$tz_off)
+        out <- data.table::as.data.table(res$hourly)
+        cols_out <- resolve_cols(out)
+        out <- normalize_types_hourly(out, cols_out)
+        out <- tryCatch(canonize_time_columns(out, tz_string, cols_out), error = function(e) {
+          emit_err("canonize_time_columns(daily)", e)
+          out
+        })
+        cols_out <- resolve_cols(out)
+        out <- promote_canonical_vars(out, cols_out)
+        out <- prune_to_canonical(out)
+        try(validate_canonical(out), silent = TRUE)
+        out <- attach_provenance(out, "daily", paste0("daily→hourly(", dia, ")"), tz_string, offset_policy, started_at, offset_hours = res$tz_off)
         raw_like_rv(out)
-        
         finished_at <- Sys.time()
-        t_total_ms  <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
-        meta_rv(list(
-          kind = "daily", converted = TRUE, failed = FALSE,
-          tz = tz_string, offset_policy = offset_policy, diurnal = dia,
-          log = c(logs, res$logs), t_detect_ms = t_detect_ms, t_convert_ms = t_convert_ms,
-          t_total_ms = t_total_ms, n_rows_in = n_rows_in, n_rows_out = nrow(out),
-          station_count = station_count, run_id = run_id,
-          started_at = started_at, finished_at = finished_at
-        ))
+        t_total_ms <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
+        meta_rv(list(kind = "daily", converted = TRUE, failed = FALSE, tz = tz_string, offset_policy = offset_policy, diurnal = dia, log = c(logs, res$logs), t_detect_ms = t_detect_ms, t_convert_ms = t_convert_ms, t_total_ms = t_total_ms, n_rows_in = n_rows_in, n_rows_out = nrow(out), station_count = station_count, run_id = run_id, started_at = started_at, finished_at = finished_at))
         emit_toast(sprintf("Converted %s days to %s hourly rows.", nrow(src), nrow(out)), "message", 5)
         return()
       }
-      
-      # 5) Unknown
+
       emit_toast("Prepare: could not classify input — check mapping/data.", "warning", 6)
-      raw_like_rv(data.frame()); daily_src_rv(NULL)
-      
+      raw_like_rv(data.frame())
+      daily_src_rv(NULL)
       finished_at <- Sys.time()
-      t_total_ms  <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
-      meta_rv(list(
-        kind = "unknown", converted = NA, failed = FALSE,
-        tz = tz_string, offset_policy = offset_policy, diurnal = dia,
-        log = logs, t_detect_ms = t_detect_ms, t_convert_ms = 0.0,
-        t_total_ms = t_total_ms, n_rows_in = n_rows_in, n_rows_out = 0L,
-        station_count = station_count, run_id = run_id,
-        started_at = started_at, finished_at = finished_at
-      ))
+      t_total_ms <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
+      meta_rv(list(kind = "unknown", converted = NA, failed = FALSE, tz = tz_string, offset_policy = offset_policy, diurnal = dia, log = logs, t_detect_ms = t_detect_ms, t_convert_ms = 0.0, t_total_ms = t_total_ms, n_rows_in = n_rows_in, n_rows_out = 0L, station_count = station_count, run_id = run_id, started_at = started_at, finished_at = finished_at))
     })
-    
-    # ---- Expose outputs ------------------------------------------------------
+
     list(
       raw_uploaded = shiny::reactive(raw_file()),
       hourly_file  = shiny::reactive(raw_like_rv()),
