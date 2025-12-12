@@ -58,7 +58,7 @@ mod_mapping_server <- function(id, tr, lang, cols, df) {
         sr_label     = tr("column_mapping")
       )
     })
-
+    last_cols <- reactiveVal(character())
     # --- JS toggle for disabled state ---
     observe({
       session$sendCustomMessage("mappingSetDisabled", list(
@@ -98,6 +98,7 @@ mod_mapping_server <- function(id, tr, lang, cols, df) {
     # --- Update choices when file changes ---
     observeEvent(cols(), {
       cc <- cols()
+      
       choices <- c("", cc)
       keep_or <- function(cur, pool, fallback) if (nzchar(cur) && cur %in% pool) cur else fallback
 
@@ -153,19 +154,32 @@ mod_mapping_server <- function(id, tr, lang, cols, df) {
         choices = choices,
         selected = keep_or(input$col_solrad, cc, find_col(cc, c("solar", "solrad", "solar_radiation", "shortwave", "srad", "rsds", "swdown", "rad", "radiation", "rad_wm2")))
       )
-
-      # Prefill lat/lon if blank
+      
+      is_new_upload <- !identical(last_cols(), cc)
+      last_cols(cc)
+      
+      
       dval <- df()
+      if (is.null(dval) || !length(dval)) return()   # guard for early calls
+      
       dn <- names(dval)
       lat_col <- find_col(dn, c("lat", "latitude"))
       lon_col <- find_col(dn, c("lon", "long", "longitude"))
+      
       lat_def <- suppressWarnings(as.numeric(if (nzchar(lat_col)) dval[[lat_col]][1] else NA))
       lon_def <- suppressWarnings(as.numeric(if (nzchar(lon_col)) dval[[lon_col]][1] else NA))
       if (!is.finite(lat_def)) lat_def <- 55
       if (!is.finite(lon_def)) lon_def <- -120
-      if (is.null(input$manual_lat) || !is.finite(input$manual_lat)) updateNumericInput(session, "manual_lat", value = lat_def)
-      if (is.null(input$manual_lon) || !is.finite(input$manual_lon)) updateNumericInput(session, "manual_lon", value = lon_def)
+      
+      # NEW: reseed lat/lon if it’s a new upload OR inputs are non-finite (cleared/blank)
+      if (is_new_upload || !is.finite(input$manual_lat) || !is.finite(input$manual_lon)) {
+        updateNumericInput(session, "manual_lat", value = lat_def)
+        updateNumericInput(session, "manual_lon", value = lon_def)
+      }
     })
+    
+    
+    
 
     # --- Update labels on language toggle ---
     set_all_labels <- function() {

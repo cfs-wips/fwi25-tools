@@ -123,6 +123,10 @@ server <- function(input, output, session) {
   observeEvent(up$csv_name(), ignoreInit = TRUE, {
     app_state$ran <- FALSE
     session$sendCustomMessage("form-reset", "controls")
+    
+    updateNumericInput(session, "mapping-manual_lat", value = NA_real_)
+    updateNumericInput(session, "mapping-manual_lon", value = NA_real_)
+    
   })
 
   observeEvent(acts$run(), {
