@@ -1,24 +1,12 @@
-# options(fwi.debug_times = FALSE)
-# options(shiny.bindcache.default = "app")
-# 
-# library(shiny)
-# library(munsell)
-# 
-# # Source NG-CFFDRS vendored code
-# # source("ng/util.r", local = FALSE)
-# # source("ng/NG_FWI.r", local = FALSE)
-# # source("ng/make_inputs.r", local = FALSE)
-# # Source my vectorized version of the ng-cffdrs code
-# source("ng/util_vectorized.r", local = FALSE)
-# source("ng/NG_FWI_vectorized.r", local = FALSE)
-# 
-# 
-# # Source modules
-# for (f in list.files("R/modules", pattern = "\\.R$", full.names = TRUE)) source(f, local = FALSE)
-# source("R/helpers/i18n_labels.R",local=FALSE)
-# source("R/helpers/help.R",local=FALSE)
+options(fwi.debug_times = FALSE)
+options(shiny.bindcache.default = "app")
+reactlog::reactlog_enable()
 
 server <- function(input, output, session) {
+  
+  reset_token <- reactiveVal(0L)
+  bump_reset <- function() reset_token(isolate(reset_token()) + 1L)
+  
   # ---- i18n / language & UI texts ----
   i18n <- mod_i18n_server("i18n", session_title = TRUE)
   tr <- i18n$tr
@@ -40,18 +28,59 @@ server <- function(input, output, session) {
     tags$p(tr("hint_upload_to_view"))
   })
 
+  
+  output$tz_calc <- renderText({
+    meta <- prepare$prep_meta()
+    tz   <- meta$tz           %||% ""
+    pol  <- meta$offset_policy %||% ""
+    if (nzchar(tz)) sprintf("Calculations time zone: %s (offset policy: %s)", tz, pol)
+    else "Calculations time zone: not inferred yet."
+  })
+  
+  
+  # observeEvent(up$csv_name(), ignoreInit = TRUE, {
+  #   app_state$ran <- FALSE
+  #   session$sendCustomMessage("form-reset", "controls")
+  #   # Visual blanking (your original behavior):
+  #   
+  #   session$sendCustomMessage("numeric-blank", list(id = "mapping-manual_lat"))
+  #   session$sendCustomMessage("numeric-blank", list(id = "mapping-manual_lon"))
+  #   
+  #   bump_reset()  
+  #   
+  # 
+  # })
+  
+  
+  
   # ---- Upload + mapping ----
   up <- mod_upload_server("upload", isolate(tr), i18n$lang)
   map <- mod_mapping_server("mapping", isolate(tr), lang = i18n$lang, cols = up$cols, df = up$raw_file)
+  
+  observeEvent(up$csv_name(), ignoreInit = TRUE, {
+    # Your existing reset / blanking
+    session$sendCustomMessage("ping", list(msg = "hello from server (upload)"))
+  })
+  
   tz <- mod_timezone_server(
-    "tz", isolate(tr),
-    manual_lat = map$manual_lat,
-    manual_lon = map$manual_lon,
-    browser_tz = reactive(input$tz_browser),
-    lookup_result = reactive(input$tz_lookup_result)
+    id = "tz", tr,
+    manual_lat    = map$manual_lat,
+    manual_lon    = map$manual_lon,
+    browser_tz    = reactive(input$tz_browser),
+    lookup_result = reactive(input$tz_lookup_result),
+    raw_file      = up$raw_file,
+    reset         = reactive(reset_token())
   )
+  
   init <- mod_init_server("init", isolate(tr))
-
+  #TESTING----
+  
+  observeEvent(input$tz_browser, ignoreInit = FALSE, {
+    message(sprintf("[TZ][DEBUG] input$tz_browser='%s'", input$tz_browser %||% ""))
+  })
+  observeEvent(input$tz_lookup_result, ignoreInit = TRUE, {
+    message(sprintf("[TZ][DEBUG] input$tz_lookup_result='%s'", input$tz_lookup_result %||% ""))
+  })
   # ---- Prepare (daily→hourly) ----
   prep <- mod_prepare_server(
     id = "prepare",
@@ -120,14 +149,6 @@ server <- function(input, output, session) {
   })
   outputOptions(output, "can_show_results", suspendWhenHidden = FALSE)
 
-  observeEvent(up$csv_name(), ignoreInit = TRUE, {
-    app_state$ran <- FALSE
-    session$sendCustomMessage("form-reset", "controls")
-    
-    updateNumericInput(session, "mapping-manual_lat", value = NA_real_)
-    updateNumericInput(session, "mapping-manual_lon", value = NA_real_)
-    
-  })
 
   observeEvent(acts$run(), {
     app_state$ran <- TRUE

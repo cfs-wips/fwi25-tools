@@ -144,11 +144,11 @@ mod_mapping_server <- function(id, tr, lang, cols, df) {
       )
       updateSelectInput(session, "col_ws",
         choices = choices,
-        selected = keep_or(input$col_ws, cc, find_col(cc, c("ws", "windspeed", "wind_speed", "wind.speed", "wind speed", "wspd", "wnd", "wndspd")))
+        selected = keep_or(input$col_ws, cc, find_col(cc, c("wind","ws", "windspeed", "wind_speed", "wind.speed", "wind speed", "wspd", "wnd", "wndspd")))
       )
       updateSelectInput(session, "col_rain",
         choices = choices,
-        selected = keep_or(input$col_rain, cc, find_col(cc, c("rain", "precip", "prec", "precip_mm", "prec_mm", "rain_mm", "rf", "rn")))
+        selected = keep_or(input$col_rain, cc, find_col(cc, c("rain", "precip", "prec", "precip_mm", "prec_mm", "rain_mm", "rf", "rn","rn_1")))
       )
       updateSelectInput(session, "col_solrad",
         choices = choices,

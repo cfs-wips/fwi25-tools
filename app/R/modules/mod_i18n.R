@@ -1,5 +1,5 @@
 # R/modules/mod_i18n.R
-# Centralized translations loaded from external JSON + modal body from HTML files.
+
 
 get_i18n <- function(key, lang = "en") {
   if (!lang %in% names(i18n_labels)) lang <- "en"

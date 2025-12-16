@@ -615,16 +615,79 @@ mod_prepare_server <- function(
     busy_rv <- shiny::reactiveVal(FALSE)
 
     mapping_fp <- shiny::reactive({
-      paste0(.map_get(mapping$col_year) %||% "", .map_get(mapping$col_month) %||% "", .map_get(mapping$col_day) %||% "", .map_get(mapping$col_hour) %||% "", .map_get(mapping$col_datetime) %||% "", .map_get(mapping$col_date) %||% "", .map_get(mapping$col_id) %||% "", .map_get(mapping$col_temp) %||% "", .map_get(mapping$col_rh) %||% "", .map_get(mapping$col_ws) %||% "", .map_get(mapping$col_prec) %||% "", .map_get(mapping$col_lat) %||% "", .map_get(mapping$col_lon) %||% "")
+      paste0(
+        .map_get(mapping$col_year) %||% "",
+        .map_get(mapping$col_month) %||% "",
+        .map_get(mapping$col_day) %||% "",
+        .map_get(mapping$col_hour) %||% "",
+        .map_get(mapping$col_datetime) %||% "",
+        .map_get(mapping$col_date) %||% "",
+        .map_get(mapping$col_id) %||% "",
+        .map_get(mapping$col_temp) %||% "",
+        .map_get(mapping$col_rh) %||% "",
+        .map_get(mapping$col_ws) %||% "",
+        .map_get(mapping$col_prec) %||% "",
+        .map_get(mapping$manual_lat) %||% "",
+        .map_get(mapping$manual_lon) %||% "")
     })
 
-    prep_ready <- shiny::eventReactive(list(raw_file(), tz$tz_use(), diurnal_method_reactive(), mapping_fp()),
+    
+    
+    
+    prep_ready <- shiny::eventReactive(
+      list(
+        raw_file(),                 # file
+        tz$tz_ready(),              # gate: have a zone
+        tz$tz_use(),                # re-fire when IANA zone changes
+        tz$tz_offset_policy(),      # std/modal policy changes
+        diurnal_method_reactive(),  # diurnal method changes
+        mapping_fp(),               # column mapping fingerprint changes
+        mapping$manual_lat(),       # <-- add numeric lat trigger
+        mapping$manual_lon()        # <-- add numeric lon trigger
+      ),
       {
-        shiny::req(raw_file(), nzchar(tz$tz_use()))
-        list(src = raw_file(), tz_string = tz$tz_use(), offset_policy = tz$tz_offset_policy(), diurnal = diurnal_method_reactive() %||% "BT-default")
+        shiny::req(raw_file(), isTRUE(tz$tz_ready()))
+        tz_use_val <- tz$tz_use()
+        shiny::req(is.character(tz_use_val), nzchar(tz_use_val))
+        
+        offset_policy_val <- tz$tz_offset_policy()
+        if (!is.character(offset_policy_val) || !nzchar(offset_policy_val)) offset_policy_val <- "std"
+        
+        dm <- diurnal_method_reactive()
+        if (!is.character(dm) || !nzchar(dm)) dm <- "BT-default"
+        
+        message(sprintf("[Prepare][INFO] Using TZ=%s (policy=%s)", tz_use_val, offset_policy_val))
+        
+        list(
+          src           = raw_file(),
+          tz_string     = tz_use_val,
+          offset_policy = offset_policy_val,
+          diurnal       = dm
+        )
       },
       ignoreInit = TRUE
     )
+    
+    
+      
+    
+    #ForTEST----
+    
+    
+    observeEvent(prep_ready(), ignoreInit = TRUE, {
+      args <- prep_ready()
+      message(sprintf("[Prepare][TRACE] prep_ready fired at %s (tz=%s, diurnal=%s)",
+                      format(Sys.time(), "%H:%M:%S"), args$tz_string, args$diurnal))
+    })
+    
+    observeEvent(debounced_ready(), ignoreInit = TRUE, {
+      message(sprintf("[Prepare][TRACE] debounced_ready fired at %s", format(Sys.time(), "%H:%M:%S")))
+    })
+    
+    
+    #ENDFORTEST----
+    
+    
     debounced_ready <- shiny::debounce(prep_ready, 500)
 
     shiny::observeEvent(debounced_ready(), {
@@ -791,7 +854,7 @@ mod_prepare_server <- function(
             emit_toast(sprintf("Filled gaps. Output has %s hourly rows.", nrow(out)), "message", 5)
             return()
           },
-          once = TRUE,
+          # once = TRUE,
           ignoreInit = TRUE
         )
         gap_observer_rv(gap_obs)
