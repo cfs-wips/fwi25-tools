@@ -102,7 +102,7 @@ mod_prepare_server <- function(
       temp <- .find_col(dt, c(.map_get(mapping$col_temp), "temp", "temperature"))
       rh <- .find_col(dt, c(.map_get(mapping$col_rh), "rh", "relhum", "relativehumidity"))
       ws <- .find_col(dt, c(.map_get(mapping$col_ws), "ws", "wspd", "windspeed", "wind"))
-      prec <- .find_col(dt, c(.map_get(mapping$col_prec), "prec", "rn_1", "rain", "rain_24", "rain24", "p24"))
+      prec <- .find_col(dt, c(.map_get(mapping$col_rain), "prec", "rn_1", "rain", "rain_24", "rain24", "p24"))
       date <- .find_col(dt, c(.map_get(mapping$col_date), "date"))
       message(sprintf(
         "[Prepare][DEBUG] Found cols: id=%s lat=%s long=%s yr=%s mon=%s day=%s hr=%s datetime=%s temp=%s rh=%s ws=%s prec=%s date=%s",
@@ -626,7 +626,7 @@ mod_prepare_server <- function(
         .map_get(mapping$col_temp) %||% "",
         .map_get(mapping$col_rh) %||% "",
         .map_get(mapping$col_ws) %||% "",
-        .map_get(mapping$col_prec) %||% "",
+        .map_get(mapping$col_rain) %||% "",
         .map_get(mapping$manual_lat) %||% "",
         .map_get(mapping$manual_lon) %||% "")
     })
