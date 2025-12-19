@@ -96,7 +96,7 @@ mod_timezone_server <- function(
       updateRadioButtons(
         session, "tz_mode",
         label   = NULL,
-        choices = setNames(c("fixed","auto"), c(tr("tz_fixed_one"), tr("tz_auto_infer"))),
+        choices = setNames(list("fixed","auto"), c(tr("tz_fixed_one"), tr("tz_auto_infer"))),
         selected = input$tz_mode %||% "auto",
         inline  = FALSE
       )
@@ -104,7 +104,7 @@ mod_timezone_server <- function(
       updateRadioButtons(
         session, "tz_offset_policy",
         label   = NULL,
-        choices = setNames(c("std","modal"), c(tr("tz_offset_std"), tr("tz_offset_modal"))),
+        choices = setNames(list("std","modal"), c(tr("tz_offset_std"), tr("tz_offset_modal"))),
         selected = input$tz_offset_policy %||% "std",
         inline  = FALSE
       )

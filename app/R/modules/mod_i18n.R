@@ -9,14 +9,6 @@ get_i18n <- function(key, lang = "en") {
 # translate with simple {placeholder} replacement
 tr_i18n <- function(key, lang = "en", ...) {
   if (!lang %in% names(i18n_labels)) lang <- "en"
-  # Special handling: if modal_body_html is external, load HTML from file
-  if (identical(key, "modal_body_html")) {
-    val <- i18n_labels[[lang]][[key]]
-    if (is.character(val) && identical(val, "__EXTERNAL_HTML__")) {
-      return(.read_help_html(lang))
-    }
-  }
-
   val <- i18n_labels[[lang]][[key]]
   if (is.null(val)) {
     return(paste0("??", key, "??"))
@@ -85,19 +77,20 @@ mod_i18n_ui <- function(id) {
   )
 }
 
+
+# R/modules/mod_i18n.R
+
 mod_i18n_server <- function(id, session_title = TRUE) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
+    
+    # Language state: pure reactive, default "en"
     lang <- reactiveVal("en")
-
-    observe({
-      qs <- parseQueryString(session$clientData$url_search)
-      l <- tolower(if (!is.null(qs[["lang"]])) qs[["lang"]] else "en")
-      if (l %in% c("en", "fr")) lang(l) else lang("en")
-    })
-
-    tr <- function(id, ...) tr_i18n(id, lang(), ...)
-
+    
+    # Translation function using your in-memory dictionary (sourced in global.R)
+    tr <- function(key, ...) tr_i18n(key, lang(), ...)
+    
+    # ---- RESTORED HELPERS (were missing in the patched version) ----
     aliases_active <- function(type = c("short", "long")) {
       type <- match.arg(type)
       L <- lang()
@@ -105,81 +98,97 @@ mod_i18n_server <- function(id, session_title = TRUE) {
       out <- get_i18n(key, L)
       if (is.null(out)) character(0) else out
     }
+    
     label_for_col <- function(nm, type = c("short", "long")) {
       type <- match.arg(type)
-      ali <- aliases_active(type)
-      key <- tolower(nm)
+      ali  <- aliases_active(type)
+      key  <- tolower(nm)
       if (length(ali) && key %in% names(ali)) ali[[key]] else nm
     }
+    
     labelize_cols <- function(cols, type = c("short", "long")) {
       type <- match.arg(type)
-      stats::setNames(cols, vapply(cols, label_for_col, character(1), type = type))
+      stats::setNames(list(cols), vapply(cols, label_for_col, character(1), type = type))
     }
-
-    # Language toggle
+    # ----------------------------------------------------------------
+    
+    # Toggle UI: plain actionLink (no URL gymnastics)
     output$lang_toggle <- renderUI({
       cur <- lang()
-      actionLink(ns("toggle_lang"),
+      actionLink(
+        ns("toggle_lang"),
         label = if (cur == "fr") "English" else "Français",
         class = "link-unstyled",
-        `aria-label` = if (cur == "fr") "Switch to English" else "Passer en français"
+        `aria-label` = if (cur == "fr") "Switch to English" else "Passer en français",
+        icon = shiny::icon("language")
       )
     })
+    
+    # Toggle handler: flip reactive value only
     observeEvent(input$toggle_lang, {
       lang(if (lang() == "fr") "en" else "fr")
-      updateQueryString(paste0("?lang=", lang()), mode = "push")
-    })
-
+    }, ignoreInit = FALSE)
+    
     # Static labels
-    output$app_title <- renderText(tr("title"))
+    output$app_title     <- renderText(tr("title"))
     output$skip_link_txt <- renderText(tr("skip_to_main"))
-
-    # ARIA + title sync
-    observeEvent(lang(),
-      {
-        session$sendCustomMessage("set-aria-labels", list(
-          app = tr("aria_app_label"),
-          tabs = tr("aria_tabs_label"),
-          run_label = tr("aria_run_label")
-        ))
-        if (isTRUE(session_title)) session$sendCustomMessage("set-title", tr("title"))
-      },
-      ignoreInit = FALSE
-    )
-
+    
+    # ARIA + document title sync
+    observeEvent(lang(), {
+      session$sendCustomMessage("set-aria-labels", list(
+        app       = tr("aria_app_label"),
+        tabs      = tr("aria_tabs_label"),
+        run_label = tr("aria_run_label")
+      ))
+      if (isTRUE(session_title)) {
+        session$sendCustomMessage("set-title", tr("title"))
+      }
+    }, ignoreInit = FALSE)
+    
     # DataTables i18n payload
     dt_i18n <- reactive({
       list(
-        sSearch = tr("dt_sSearch"), sLengthMenu = tr("dt_sLength"), sInfo = tr("dt_sInfo"),
-        sInfoEmpty = tr("dt_sInfoEmpty"), sInfoFiltered = tr("dt_sInfoFilt"), sZeroRecords = tr("dt_sZero"),
-        sProcessing = tr("dt_sProc"),
-        oPaginate = list(sFirst = tr("dt_pag_first"), sPrevious = tr("dt_pag_prev"), sNext = tr("dt_pag_next"), sLast = tr("dt_pag_last"))
+        sSearch       = tr("dt_sSearch"),
+        sLengthMenu   = tr("dt_sLength"),
+        sInfo         = tr("dt_sInfo"),
+        sInfoEmpty    = tr("dt_sInfoEmpty"),
+        sInfoFiltered = tr("dt_sInfoFilt"),
+        sZeroRecords  = tr("dt_sZero"),
+        sProcessing   = tr("dt_sProc"),
+        oPaginate     = list(
+          sFirst    = tr("dt_pag_first"),
+          sPrevious = tr("dt_pag_prev"),
+          sNext     = tr("dt_pag_next"),
+          sLast     = tr("dt_pag_last")
+        )
       )
     })
-
-    # First-load modal (same keys as the Help button)
-    observeEvent(TRUE,
-      {
-        showModal(
-          modalDialog(
-            title = tr("modal_title"),
-            HTML(tr("modal_body_html")), # loads external HTML transparently
-            easyClose = FALSE,
-            footer = modalButton(tr("modal_close")),
-            size = "l" # actual width/height controlled by CSS in the HTML
-          )
+    
+    # First-load modal (kept as-is)
+    observeEvent(TRUE, {
+      showModal(
+        modalDialog(
+          title     = tr("modal_title"),
+          HTML(tr("modal_body_html")),
+          easyClose = FALSE,
+          footer    = modalButton(tr("modal_close")),
+          size      = "xl"
         )
-      },
-      once = TRUE
-    )
-
-    return(list(
-      lang = lang,
-      tr = tr,
+      )
+    }, once = TRUE)
+    
+    # Expose tr/lang for other modules (e.g., help button elsewhere)
+    session$userData$tr   <- tr
+    session$userData$lang <- reactive(lang())
+    
+    # Return handles for modules that depend on these helpers
+    list(
+      lang           = lang,
+      tr             = tr,
       aliases_active = aliases_active,
-      label_for_col = label_for_col,
-      labelize_cols = labelize_cols,
-      dt_i18n = dt_i18n
-    ))
+      label_for_col  = label_for_col,
+      labelize_cols  = labelize_cols,
+      dt_i18n        = dt_i18n
+    )
   })
 }

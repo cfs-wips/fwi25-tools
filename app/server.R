@@ -1,9 +1,4 @@
-options(fwi.debug_times = FALSE)
-options(shiny.bindcache.default = "app")
-reactlog::reactlog_enable()
-
 server <- function(input, output, session) {
-  
   reset_token <- reactiveVal(0L)
   bump_reset <- function() reset_token(isolate(reset_token()) + 1L)
   
@@ -28,40 +23,11 @@ server <- function(input, output, session) {
     tags$p(tr("hint_upload_to_view"))
   })
 
-  
-  output$tz_calc <- renderText({
-    meta <- prepare$prep_meta()
-    tz   <- meta$tz           %||% ""
-    pol  <- meta$offset_policy %||% ""
-    if (nzchar(tz)) sprintf("Calculations time zone: %s (offset policy: %s)", tz, pol)
-    else "Calculations time zone: not inferred yet."
-  })
-  
-  
-  # observeEvent(up$csv_name(), ignoreInit = TRUE, {
-  #   app_state$ran <- FALSE
-  #   session$sendCustomMessage("form-reset", "controls")
-  #   # Visual blanking (your original behavior):
-  #   
-  #   session$sendCustomMessage("numeric-blank", list(id = "mapping-manual_lat"))
-  #   session$sendCustomMessage("numeric-blank", list(id = "mapping-manual_lon"))
-  #   
-  #   bump_reset()  
-  #   
-  # 
-  # })
-  
-  
-  
+
   # ---- Upload + mapping ----
   up <- mod_upload_server("upload", isolate(tr), i18n$lang)
   map <- mod_mapping_server("mapping", isolate(tr), lang = i18n$lang, cols = up$cols, df = up$raw_file)
-  
-  observeEvent(up$csv_name(), ignoreInit = TRUE, {
-    # Your existing reset / blanking
-    session$sendCustomMessage("ping", list(msg = "hello from server (upload)"))
-  })
-  
+
   tz <- mod_timezone_server(
     id = "tz", tr,
     manual_lat    = map$manual_lat,
@@ -71,16 +37,9 @@ server <- function(input, output, session) {
     raw_file      = up$raw_file,
     reset         = reactive(reset_token())
   )
-  
+
   init <- mod_init_server("init", isolate(tr))
-  #TESTING----
-  
-  observeEvent(input$tz_browser, ignoreInit = FALSE, {
-    message(sprintf("[TZ][DEBUG] input$tz_browser='%s'", input$tz_browser %||% ""))
-  })
-  observeEvent(input$tz_lookup_result, ignoreInit = TRUE, {
-    message(sprintf("[TZ][DEBUG] input$tz_lookup_result='%s'", input$tz_lookup_result %||% ""))
-  })
+
   # ---- Prepare (daily→hourly) ----
   prep <- mod_prepare_server(
     id = "prepare",

@@ -344,38 +344,37 @@ mod_results_table_server <- function(id, tr, dt_i18n, results, tz_reactive,
         tbl.on('draw.dt', adjust);
         $(window).on('resize.dt', adjust);
       ")
-
         DT::datatable(
           df,
           rownames = FALSE,
-          fillContainer = TRUE,
           escape = TRUE,
+          fillContainer = TRUE,
           filter = "top",
           class = "display nowrap compact hover stripe gc-dt",
-          extensions = c("Buttons", "Scroller"),
+          extensions = c("Buttons"),
           options = list(
             language = dt_i18n(),
             autoWidth = TRUE,
             scrollX = TRUE,
-            deferRender = TRUE,
-            scroller = TRUE,
-            scrollY = 300,
-            scrollCollapse = TRUE,
-            pageLength = 25,
+            pageLength = 10,
             lengthMenu = list(c(10, 25, 50, 100, -1), c("10", "25", "50", "100", "All")),
-            dom = "Bfrtip",
+            scrollY = 300,
+            dom = "Blrtip",
             buttons = list(
               list(extend = "copy", text = tr("dt_btn_copy")),
               list(extend = "csv", text = tr("dt_btn_csv"), filename = "hFWI"),
               list(extend = "excel", text = tr("dt_btn_excel"), filename = "hFWI")
             ),
-            initComplete = DT::JS("function(){ this.api().columns.adjust(); }")
+            initComplete = DT::JS("function(){ this.api().columns.adjust(); }"),
+            columnDefs = list(
+              list(width = '110px', targets = which(names(df) %in% c("datetime","timestamp","sunrise_local","sunset_local")))
+            )
           ),
           callback = cb
         )
-      },
-      server = TRUE
-    )
+  },
+  server = FALSE
+  )
     outputOptions(output, "tbl", suspendWhenHidden = FALSE)
   })
 }

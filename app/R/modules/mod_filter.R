@@ -136,7 +136,7 @@ label_with_help_safe <- function(label_text, help_text = NULL) {
 mod_filter_ui <- function(id) {
   ns <- NS(id)
   tagList(
-    h4(id = ns("lbl_filter"), uiOutput(ns("lbl_filter"))),
+    h5(id = ns("lbl_filter"), uiOutput(ns("lbl_filter"))),
     div(
       role = "group",
       `aria-labelledby` = ns("lbl_start_date"),

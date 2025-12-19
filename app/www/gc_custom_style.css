@@ -340,7 +340,7 @@ table.dataTable.gc-dt.stripe tbody tr:nth-child(even) { background-color: #fafaf
   border-width: var(--gc-spin-border);
 }
 
-role="region"][aria-label="FWI plots"] .gc-spinner {
+[role="region"][aria-label="FWI plots"] .gc-spinner {
   --gc-spin-size: clamp(28px, 10cqw, 96px);
   --gc-spin-border: max(3px, calc(var(--gc-spin-size) / 12));
 }
@@ -348,4 +348,30 @@ role="region"][aria-label="FWI plots"] .gc-spinner {
 /* Optional: slow the animation for users who prefer reduced motion */
 @media (prefers-reduced-motion: reduce) {
   .gc-spinner { animation-duration: 1.6s; }
+}
 
+
+/* Help modal — flowchart sizing & spacing (Bootstrap 5) */
+#shiny-modal .modal-body .help-flowchart svg,
+#shiny-modal .modal-body .help-flowchart img {
+  display: block;
+  /* Fit but don’t overflow: cap width vs viewport; keep aspect ratio */
+  width: min(900px, 92vw);
+  max-height: 65vh;    /* reduce tall whitespace */
+  height: auto;
+  margin-inline: auto; /* center */
+}
+
+/* Optional: slightly tighter modal padding for dense diagrams */
+#shiny-modal .modal-body {
+  padding: 1rem;
+}
+
+/* Mobile tweak: a bit shorter on small screens */
+@media (max-width: 576px) {
+  #shiny-modal .modal-body .help-flowchart svg,
+  #shiny-modal .modal-body .help-flowchart img {
+       max-height: 55vh;
+    width: 92vw;
+  }
+}

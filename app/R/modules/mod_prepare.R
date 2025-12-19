@@ -770,13 +770,14 @@ mod_prepare_server <- function(
         if (can_replace) choices <- c(choices, "replace_stream" = "Replace entire stream: use daily NOON (hr=12) and convert to hourly")
         shiny::showModal(shiny::modalDialog(
           title = sprintf("Hourly sequence has gaps — %d rows, %d distinct day(s) (%d station%s)", n_rows_in, distinct_days, station_count, if (station_count == 1) "" else "s"),
-          shiny::div(shiny::tags$p(sprintf("Summary: %d of %d day(s) have gaps or <24 hours; duplicates on %d day(s).", days_with_gaps, distinct_days, sum(day_stats$dup_count > 0))), shiny::tags$details(shiny::tags$summary("Show first 10 affected days"), shiny::HTML({
-            affected <- day_stats[gap_count > 0 | n_hours < 24][order(date)][1:min(10L, .N)]
+          shiny::div(shiny::tags$p(sprintf("Summary: %d of %d day(s) have gaps or <24 hours; duplicates on %d day(s).", days_with_gaps, distinct_days, sum(day_stats$dup_count > 0))), shiny::tags$details(shiny::tags$summary("Show affected days"), shiny::HTML({
+            affected <- day_stats[gap_count > 0 | n_hours < 24][order(date)][1:(.N)]
             if (!nrow(affected)) "<em>No per-day issues detected (unexpected).</em>" else paste(sprintf("%s — %s: hours=%d, gaps=%d, dups=%d", affected$id, as.character(affected$date), affected$n_hours, affected$gap_count, affected$dup_count), collapse = "<br/>")
           }))),
           shiny::radioButtons(ns("gap_policy"), "Choose an action:", choices = choices, selected = "fill_gaps"),
           footer = shiny::tagList(shiny::modalButton("Cancel"), shiny::actionButton(ns("apply_gap_policy"), "Apply")),
-          easyClose = TRUE
+          easyClose = TRUE,
+          size="l"
         ))
         gap_obs <- shiny::observeEvent(input$apply_gap_policy,
           {

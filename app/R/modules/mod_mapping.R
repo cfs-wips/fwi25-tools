@@ -2,7 +2,7 @@
 mod_mapping_ui <- function(id) {
   ns <- NS(id)
   tagList(
-    h4(id = ns("lbl_column_mapping"), uiOutput(ns("lbl_column_mapping"))),
+    h5(id = ns("lbl_column_mapping"), uiOutput(ns("lbl_column_mapping"))),
     tags$fieldset(
       id = ns("mapping_fs"), # for JS targeting
       role = "group",

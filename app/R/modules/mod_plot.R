@@ -47,6 +47,22 @@ mod_plot_server <- function(
       if (is.null(val) || !nzchar(as.character(val)) || grepl("^\\?\\?.*\\?\\?$", val)) default else as.character(val)
     }
     
+    
+    
+    observeEvent(data_for_plot(), {
+      cat("[plot] data_for_plot -> dt_col:", attr(data_for_plot(), "dt_col"),
+          "; rows:", nrow(data_for_plot()), "\n")
+    })
+    observeEvent(input$plot_dataset, {
+      cat("[plot] dataset:", input$plot_dataset, "\n")
+    })
+    observeEvent(input$plot_y_multi, {
+      cat("[plot] y_multi:", paste(input$plot_y_multi, collapse=", "), "\n")
+    })
+    
+  
+    
+    
     # ---- DST policy helpers ----
     normalize_policy <- function(val) {
       tolower_chr <- function(x) { x <- as.character(x); x[is.na(x)] <- ""; tolower(trimws(x)) }
@@ -192,10 +208,70 @@ mod_plot_server <- function(
     
     has_preview <- reactive({ si <- shaped_input(); !is.null(si) && !is.null(si$inputs) && nrow(as.data.frame(si$inputs)) > 0 })
     has_hourly  <- reactive({ d <- results(); !is.null(d) && nrow(as.data.frame(d)) > 0 })
-    source_labels <- reactive({ c(results = i18n_or("data_src_results","Results (hFWI output)"), inputs = i18n_or("data_src_inputs","Inputs (weather)")) })
     
+    source_labels <- reactive({
+      list(
+        results = i18n_or("data_src_results","Results (hFWI output)"),
+        inputs  = i18n_or("data_src_inputs","Inputs (weather)")
+      )
+    })
+      
+    
+    update_y_choices <- function(dataset_key, df) {
+      # Prevent churn while we rebuild choices/selection
+      shiny::freezeReactiveValue(input, "plot_y_multi")
+      
+      # Numeric columns minus the datetime column
+      raw_choices <- names(df)
+      dt_col      <- attr(df, "dt_col")
+      raw_choices <- setdiff(raw_choices, dt_col)
+      # if (!length(raw_choices)) {
+      #   updateSelectizeInput(session, "plot_y_multi",
+      #                        choices  = list(),               # named LIST (empty)
+      #                        selected = character(0)
+      #   )
+      #   return(invisible(NULL))
+      # }
+      
+      # Preferred variables by dataset
+      preferred_for <- function(key) {
+        if (identical(key, "inputs")) c("temp","rh","wind","ws","rain")
+        else c("ffmc","dmc","dc","fwi","isi","bui")
+      }
+      prefs <- preferred_for(dataset_key)
+      lc    <- tolower(raw_choices)
+      want  <- raw_choices[match(prefs, lc, nomatch = 0L)]
+      proposed_selected <- unique(if (length(want)) want else utils::head(raw_choices, 4))
+      # current_sel <- isolate(input$plot_y_multi)
+      # current_sel <- intersect(current_sel %||% character(0), raw_choices)
+      # final_sel   <- if (length(current_sel)) current_sel else proposed_selected
+      
+      # Build **named LIST** of choices, labels via label_for_col()
+      choices_list <- as.list(raw_choices)
+      names(choices_list) <- vapply(
+        raw_choices,
+        function(v) label_for_col(v, type = "short"),
+        FUN.VALUE=character(1)
+      )
+      updateSelectizeInput(
+        session, "plot_y_multi",
+        choices  = choices_list,    # named LIST (values = raw var names; names = labels)
+        selected = proposed_selected
+      )
+      
+      current_sel <- isolate(input$plot_y_multi)
+      current_sel <- intersect(current_sel %||% character(0), raw_choices)
+      final_sel   <- if (length(current_sel)) current_sel else proposed_selected
+      updateSelectizeInput(
+        session, "plot_y_multi",
+        choices  = choices_list,    # named LIST (values = raw var names; names = labels)
+        selected = final_sel
+      )
+    }
+      
     observe({
-      labs <- source_labels(); choices_named <- setNames(c("results","inputs"), c(labs[["results"]], labs[["inputs"]]))
+      labs <- source_labels(); 
+      choices_named <- setNames(list("results","inputs"), c(labs$results, labs$inputs))
       current <- isolate(input$plot_dataset)
       pick_default <- if (isTRUE(has_hourly())) "results" else if (isTRUE(has_preview())) "inputs" else "inputs"
       sel <- if (is.null(current) || !(current %in% c("results","inputs"))) pick_default else current
@@ -203,10 +279,11 @@ mod_plot_server <- function(
     })
     observeEvent(has_hourly(), {
       if (isTRUE(has_hourly())) {
-        labs <- source_labels(); choices_named <- setNames(c("results","inputs"), c(labs[["results"]], labs[["inputs"]]))
+        labs <- source_labels()
+        choices_named <- setNames(list("results","inputs"), c(labs[["results"]], labs[["inputs"]]))
         updateSelectInput(session, "plot_dataset", choices = choices_named, selected = "results")
       }
-    }, ignoreInit = TRUE, priority = 100)
+    }, ignoreInit = F, priority = 100)
     
     # ---- Data prep reactive ----
     data_for_plot <- reactive({
@@ -234,33 +311,31 @@ mod_plot_server <- function(
     
     # ---- Populate Y choices ----
     preferred_for <- function(dataset_key) { if (dataset_key == "inputs") c("temp","rh","wind","ws","rain") else c("ffmc","dmc","dc","fwi") }
+    
+    # --- Populate Y choices when dataset changes (inputs vs results) ---
+    
     observeEvent(input$plot_dataset, {
       df <- req(data_for_plot())
-      shiny::freezeReactiveValue(input, "plot_y_multi")
-      raw_choices <- names(df)[vapply(df, is.numeric, logical(1))]
-      dt_col <- attr(df, "dt_col"); raw_choices <- setdiff(raw_choices, dt_col)
-      if (!length(raw_choices)) { updateSelectizeInput(session, "plot_y_multi", choices = character(0), selected = character(0)); return() }
-      prefs <- preferred_for(input$plot_dataset); lc <- tolower(raw_choices)
-      want_idx <- match(prefs, lc, nomatch = 0); want <- raw_choices[want_idx[want_idx > 0]]
-      selected <- if (length(want)) want else utils::head(raw_choices, 4)
-      updateSelectizeInput(session, "plot_y_multi",
-                           choices = stats::setNames(raw_choices, vapply(raw_choices, function(v) label_for_col(v, type="short"), character(1))),
-                           selected = unique(selected)
-      )
-    }, ignoreInit = TRUE, priority = 100)
+      update_y_choices(input$plot_dataset, df)
+    },ignoreInit = FALSE, priority = 100)
     
+    observeEvent(data_for_plot(), {
+      req(input$plot_dataset)
+      update_y_choices(input$plot_dataset, data_for_plot())
+    },ignoreInit=FALSE,priority=100)
     # ---- Auto-init when Plot tab first opens ----
     plotted_once <- reactiveVal(FALSE)
     observeEvent(list(tab_active(), results()), {
       req(tab_active() == "Plot", !plotted_once())
       d <- results(); req(!is.null(d), nrow(as.data.frame(d)) > 0)
       if (is.null(input$plot_dataset) || !identical(input$plot_dataset, "results")) updateSelectInput(session, "plot_dataset", selected = "results")
-      if (is.null(input$plot_y_multi) || length(input$plot_y_multi) == 0) {
-        cols <- names(as.data.frame(d)); pref_ci <- c("ffmc","dmc","dc","fwi","isi","bui")
-        pick <- cols[tolower(cols) %in% pref_ci]
-        if (length(pick) == 0) { num_cols <- cols[vapply(as.data.frame(d)[cols], is.numeric, logical(1))]; pick <- head(setdiff(num_cols, c("datetime","timestamp","id","tz","timezone")), 4) }
-        if (length(pick) > 0) updateSelectizeInput(session, "plot_y_multi", selected = unique(pick))
-      }
+      # if (is.null(input$plot_y_multi) || length(input$plot_y_multi) == 0) {
+      #   cols <- names(as.data.frame(d)); pref_ci <- c("ffmc","dmc","dc","fwi","isi","bui")
+      #   pick <- cols[tolower(cols) %in% pref_ci]
+      #   if (length(pick) == 0) { num_cols <- cols[vapply(as.data.frame(d)[cols], is.numeric, logical(1))]; pick <- head(setdiff(num_cols, c("datetime","timestamp","id","tz","timezone")), 4) }
+      #   if (length(pick) > 0) updateSelectizeInput(session, "plot_y_multi", selected = unique(pick))
+      # }
+      update_y_choices("results", as.data.frame(d))
       plotted_once(TRUE)
     }, ignoreInit = FALSE, priority = 200)
     
@@ -498,7 +573,7 @@ mod_plot_server <- function(
     session$onFlushed(function() {
       session$sendCustomMessage("getPlotlyLayout", list(id = session$ns("plot_ts")))
       session$sendCustomMessage("getPlotlyTraces", list(id = session$ns("plot_ts")))
-    }, once = FALSE)
+    }, once = T)
     
     outputOptions(output, "plot_ts", suspendWhenHidden = FALSE)
   })

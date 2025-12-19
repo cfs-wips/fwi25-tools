@@ -72,7 +72,7 @@ mod_fwi87_table_server <- function(id, tr, dt_i18n, df87, tz_reactive,
     }
 
     output$title <- renderUI({
-      h4(i18n_or("fwi87_results_title", "FWI87 daily results"))
+      h5(i18n_or("fwi87_results_title", "FWI87 daily results"))
     })
     outputOptions(output, "title", suspendWhenHidden = FALSE)
     output$hint <- renderUI({
@@ -271,26 +271,27 @@ mod_fwi87_table_server <- function(id, tr, dt_i18n, df87, tz_reactive,
           fillContainer = TRUE,
           filter = "top",
           class = "display nowrap compact hover stripe gc-dt",
-          extensions = c("Buttons", "Scroller"),
+          extensions = c("Buttons"),
           options = list(
             language = dt_i18n(),
             autoWidth = TRUE,
             scrollX = TRUE,
-            deferRender = TRUE,
-            scroller = TRUE,
-            pageLength = 25,
+            pageLength = 10,
             lengthMenu = list(c(10, 25, 50, 100, -1), c("10", "25", "50", "100", "All")),
             scrollY = 300,
-            dom = "Bfrtip",
+            dom = "Blrtip",
             buttons = list(
               list(extend = "copy", text = tr("dt_btn_copy")),
               list(extend = "csv", text = tr("dt_btn_csv"), filename = "dailyFWI"),
               list(extend = "excel", text = tr("dt_btn_excel"), filename = "dailyFWI")
+            ),
+            columnDefs = list(
+              list(width = '110px', targets = which(names(d) %in% c("datetime","timestamp","sunrise_local","sunset_local")))
             )
           )
         )
       },
-      server = TRUE
+      server = FALSE
     )
     outputOptions(output, "tbl", suspendWhenHidden = FALSE)
   })

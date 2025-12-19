@@ -75,7 +75,7 @@ mod_actions_server <- function(id, tr, results, csv_name) {
           HTML(tr("modal_body_html")),
           easyClose = TRUE,
           footer = modalButton(tr("modal_close")),
-          size = "l"
+          size = "xl"
         )
       )
     })

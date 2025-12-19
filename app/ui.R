@@ -9,17 +9,13 @@ downloadLink_sl <- function(...) {
   tag
 }
 
-# for (f in list.files("R/modules", pattern = "\\.R$", full.names = TRUE)) {
-#   source(f, local = TRUE)
-# }
-
 ui <- fluidPage(
+  theme=bslib::bs_theme(),
   title = NULL,
   tags$head(
     tags$title("FWI2025"),
     tags$link(rel = "stylesheet", type = "text/css", href = "gc_custom_style.css"),
     tags$script(src = "tz.js"),
-    tags$script(src = "upload_labels.js"),
     tags$script(src = "app-init.js")
   ),
   mod_i18n_ui("i18n"),

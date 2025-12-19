@@ -73,12 +73,12 @@ mod_inputs_server <- function(id, tr, dt_i18n, raw_data, hourly_data) {
           options = list(
             language = dt_i18n(),
             autoWidth = TRUE,
-            scrollX = F,
-            deferRender = F,
-            scroller = F,
-            scrollY = 900,
+            scrollX = FALSE,
+            deferRender = FALSE,
+            scroller = FALSE,
+            scrollY = 800,
             scrollCollapse = TRUE,
-            pageLength = 25,
+            pageLength = 20,
             lengthMenu = list(c(10, 25, 50, 100, -1), c("10", "25", "50", "100", "All")),
             dom = "Bfrtip",
             buttons = list(
@@ -91,7 +91,7 @@ mod_inputs_server <- function(id, tr, dt_i18n, raw_data, hourly_data) {
           callback = cb
         )
       },
-      options = list(scrollX = F)
+      options = list(scrollX = FALSE)
     )
   })
 }

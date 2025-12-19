@@ -259,7 +259,9 @@ minmax_to_hourly <- function(
     by_stn <- r[ID == stn, ]
     for (yr in unique(by_stn$YR)) {
       by_year <- by_stn[YR == yr, ]
-      print(paste0("Running ", stn, " for ", yr))
+      if (verbose) {
+        print(paste0("Running ", stn, " for ", yr))
+      }
       df <- minmax_to_hourly_single(by_year, skip_invalid, verbose)
       result <- rbind(result, df)
     }
