@@ -66,7 +66,6 @@ mod_inputs_server <- function(id, tr, dt_i18n, raw_data, hourly_data) {
           data,
           rownames = FALSE,
           fillContainer = TRUE,
-          autoHideNavigation = TRUE,
           escape = TRUE,
           filter = "top",
           class = "display nowrap compact hover stripe gc-dt",
