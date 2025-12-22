@@ -5,12 +5,12 @@
 # standard offset, e.g., 20070510T12:00:00-05:00 for Toronto in summer.
 # -----------------------------------------------------------------------------
 
+
+# mod_fwi87_table_ui.R
 mod_fwi87_table_ui <- function(id) {
   ns <- NS(id)
   tagList(
-    # Ensure columns adjust after layout changes
-    tags$script(HTML(
-      "
+    tags$script(HTML("
       $(function(){
         var adjust = function(){
           try{ $.fn.dataTable.tables({visible:true, api:true}).columns.adjust(); }catch(e){}
@@ -18,8 +18,8 @@ mod_fwi87_table_ui <- function(id) {
         $(document).on('shown.bs.tab shown.bs.collapse', function(){ setTimeout(adjust, 0); });
         $(window).on('resize.dt', adjust);
       });
-      "
-    )),
+    ")),
+    
     tags$section(
       class = "gc-card",
       tags$div(role = "region", `aria-label` = "FWI87 results table", uiOutput(ns("title"))),
@@ -31,17 +31,19 @@ mod_fwi87_table_ui <- function(id) {
         ),
         div(
           class = "gc-spin-wrap",
-          DT::DTOutput(ns("tbl"), width = "100%"),
+          # ⬇️ fill vertically to card height
+          DT::DTOutput(ns("tbl"), width = "100%", height = "100%", fill = TRUE),
           div(
             class = "gc-spin-overlay",
             div(class = "gc-spinner", `aria-hidden` = "true"),
-            span(class = "sr-only", "Loading…")
+            span(class = "visually-hidden", "Loading…")
           )
         )
       )
     )
   )
 }
+
 
 #' @param tr translator function
 #' @param dt_i18n function returning DT language list
@@ -264,31 +266,39 @@ mod_fwi87_table_server <- function(id, tr, dt_i18n, df87, tz_reactive,
     output$tbl <- DT::renderDT(
       {
         d <- table_data()
+        cb <- DT::JS("
+        var tbl = table;          // DataTables API instance
+        function adjust(){ try { tbl.columns.adjust(); } catch(e){} }
+        setTimeout(adjust, 0);    // after init
+        tbl.on('draw.dt', adjust);
+        $(window).on('resize.dt', adjust);
+      ")
         DT::datatable(
           d,
           rownames = FALSE,
           escape = TRUE,
           fillContainer = TRUE,
           filter = "top",
-          class = "display nowrap compact hover stripe gc-dt",
+          class = "display nowrap compact hover stripe gc-dt datatable",  # add "datatable"
           extensions = c("Buttons"),
           options = list(
-            language = dt_i18n(),
-            autoWidth = TRUE,
-            scrollX = TRUE,
-            pageLength = 10,
-            lengthMenu = list(c(10, 25, 50, 100, -1), c("10", "25", "50", "100", "All")),
-            scrollY = 300,
-            dom = "Blrtip",
-            buttons = list(
-              list(extend = "copy", text = tr("dt_btn_copy")),
-              list(extend = "csv", text = tr("dt_btn_csv"), filename = "dailyFWI"),
+            language    = dt_i18n(),
+            autoWidth   = FALSE,          # <- match mod_inputs
+            deferRender = TRUE,           # <- match mod_inputs
+            scrollX     = TRUE,          # <- match mod_inputs
+            scrollY     = 240,            # <- match mod_inputs
+            pageLength  = 10,             # <- match mod_inputs
+            lengthMenu  = list(c(10, 20, 50, 100, -1), c("10","20","50","100","All")),
+            dom         = "Blrtip",
+            buttons     = list(
+              list(extend = "copy",  text = tr("dt_btn_copy")),
+              list(extend = "csv",   text = tr("dt_btn_csv"),   filename = "dailyFWI"),
               list(extend = "excel", text = tr("dt_btn_excel"), filename = "dailyFWI")
             ),
-            columnDefs = list(
-              list(width = '110px', targets = which(names(d) %in% c("datetime","timestamp","sunrise_local","sunset_local")))
-            )
-          )
+            # drop columnDefs width rules for ISO datetime/sunrise/sunset
+            initComplete = DT::JS("function(){ this.api().columns.adjust(); }")
+          ),
+          callback = cb
         )
       },
       server = FALSE

@@ -17,7 +17,7 @@ mod_inputs_ui <- function(id) {
       ),
       div(
         class = "gc-spin-wrap",
-        DT::dataTableOutput(ns("inputs_table")),
+        DT::dataTableOutput(ns("inputs_table"), width = "100%", height = "100%", fill = TRUE),
         div(
           class = "gc-spin-overlay",
           div(class = "gc-spinner", `aria-hidden` = "true"),
@@ -66,15 +66,16 @@ mod_inputs_server <- function(id, tr, dt_i18n, raw_data, hourly_data) {
           data,
           rownames = FALSE,
           fillContainer = TRUE,
+          autoHideNavigation = TRUE,
           escape = TRUE,
           filter = "top",
           class = "display nowrap compact hover stripe gc-dt",
           extensions = c("Buttons"),
           options = list(
             language = dt_i18n(),
-            autoWidth = TRUE,
+            autoWidth = FALSE,
             scrollX = FALSE,
-            scrollY = 800,
+            scrollY = 360,
             pageLength = 20,
             lengthMenu = list(c(10, 20, 50, 100, -1), c("10", "20", "50", "100", "All")),
             dom = "Blrtip",
@@ -88,7 +89,6 @@ mod_inputs_server <- function(id, tr, dt_i18n, raw_data, hourly_data) {
           callback = cb
         )
       },
-      options = list(scrollX = FALSE)
     )
   })
 }

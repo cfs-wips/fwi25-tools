@@ -291,3 +291,19 @@
 
   log.info('Bootstrap complete');
 })();
+
+
+// app-init.js (append)
+/* Viewport height fix: sets CSS --vh-page to the real innerHeight (mobile-friendly) */
+(function () {
+  function setViewportVars() {
+    const vh = window.innerHeight * 0.01;
+    document.documentElement.style.setProperty('--vh-page', `${vh * 100}px`);
+    // Derive your other tokens from the true page height if desired
+    document.documentElement.style.setProperty('--vh-input-card', `${Math.round(vh * 60)}vh`);
+    document.documentElement.style.setProperty('--vh-output-card', `${Math.round(vh * 40)}vh`);
+  }
+  window.addEventListener('resize', setViewportVars, { passive: true });
+  window.addEventListener('orientationchange', setViewportVars);
+  setViewportVars();
+})();

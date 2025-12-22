@@ -3,12 +3,13 @@
 # FWI25 Results (hourly) — Results Table Module
 # -----------------------------------------------------------------------------
 
+
+# mod_results_table_ui.R
 mod_results_table_ui <- function(id) {
   ns <- NS(id)
   tagList(
-    # Ensure columns adjust after layout changes
-    tags$script(HTML(
-      "
+    # keep your script that calls columns.adjust() on tab show/resize
+    tags$script(HTML("
       $(function(){
         var adjust = function(){
           try{ $.fn.dataTable.tables({visible:true, api:true}).columns.adjust(); }catch(e){}
@@ -16,8 +17,8 @@ mod_results_table_ui <- function(id) {
         $(document).on('shown.bs.tab shown.bs.collapse', function(){ setTimeout(adjust, 0); });
         $(window).on('resize.dt', adjust);
       });
-      "
-    )),
+    ")),
+    
     tags$section(
       class = "gc-card",
       tags$div(role = "region", `aria-label` = "FWI25 results table", uiOutput(ns("title"))),
@@ -29,17 +30,19 @@ mod_results_table_ui <- function(id) {
         ),
         div(
           class = "gc-spin-wrap",
-          DT::DTOutput(ns("tbl"), width = "100%"),
+          # ⬇️ make the output a ‘fill item’ so it can grow to card height
+          DT::DTOutput(ns("tbl"), width = "100%", height = "100%", fill = TRUE),
           div(
             class = "gc-spin-overlay",
             div(class = "gc-spinner", `aria-hidden` = "true"),
-            span(class = "sr-only", "Loading…")
+            span(class = "visually-hidden", "Loading…")
           )
         )
       )
     )
   )
 }
+
 
 #' @param tr translator function
 #' @param dt_i18n function providing DT language list
@@ -350,28 +353,29 @@ mod_results_table_server <- function(id, tr, dt_i18n, results, tz_reactive,
           escape = TRUE,
           fillContainer = TRUE,
           filter = "top",
-          class = "display nowrap compact hover stripe gc-dt",
+          class = "display nowrap compact hover stripe gc-dt datatable",  # add "datatable" to help JS hooks
           extensions = c("Buttons"),
           options = list(
-            language = dt_i18n(),
-            autoWidth = TRUE,
-            scrollX = TRUE,
-            pageLength = 10,
-            lengthMenu = list(c(10, 25, 50, 100, -1), c("10", "25", "50", "100", "All")),
-            scrollY = 300,
-            dom = "Blrtip",
-            buttons = list(
-              list(extend = "copy", text = tr("dt_btn_copy")),
-              list(extend = "csv", text = tr("dt_btn_csv"), filename = "hFWI"),
-              list(extend = "excel", text = tr("dt_btn_excel"), filename = "hFWI")
+            language    = dt_i18n(),
+            autoWidth   = FALSE,          # <- match mod_inputs (reduces width recalcs)
+            deferRender = TRUE,           # <- faster initial draw
+            scrollX     = TRUE,          # <- match mod_inputs
+            scrollY     = 240,            # <- match mod_inputs; adjust if this feels too tall
+            pageLength  = 10,             # <- match mod_inputs
+            lengthMenu  = list(c(10, 20, 50, 100, -1), c("10","20","50","100","All")),
+            dom         = "Blrtip",
+            buttons     = list(
+              list(extend = "copy",  text = tr("dt_btn_copy")),
+              list(extend = "csv",   text = tr("dt_btn_csv"),   filename = "results"),
+              list(extend = "excel", text = tr("dt_btn_excel"), filename = "results")
             ),
-            initComplete = DT::JS("function(){ this.api().columns.adjust(); }"),
-            columnDefs = list(
-              list(width = '110px', targets = which(names(df) %in% c("datetime","timestamp","sunrise_local","sunset_local")))
-            )
+            # remove explicit columnDefs widths for better consistency
+            # initComplete keeps a first-pass adjust
+            initComplete = DT::JS("function(){ this.api().columns.adjust(); }")
           ),
           callback = cb
         )
+        
   },
   server = FALSE
   )
