@@ -16,7 +16,7 @@ mod_inputs_ui <- function(id) {
         inline = TRUE
       ),
       div(
-        class = "gc-spin-wrap",
+        class = "gc-spin-wrap inputs-tab",
         DT::dataTableOutput(ns("inputs_table"), width = "100%", height = "100%", fill = TRUE),
         div(
           class = "gc-spin-overlay",
@@ -44,9 +44,8 @@ mod_inputs_server <- function(id, tr, dt_i18n, raw_data, hourly_data) {
     })
 
     # Render table based on selected view mode
-    output$inputs_table <- DT::renderDataTable(
-      {
-        cb <- DT::JS("
+    output$inputs_table <- DT::renderDataTable({
+      cb <- DT::JS("
         var tbl = table;
         function adjust(){ try { tbl.columns.adjust(); } catch(e){} }
         setTimeout(adjust, 0);
@@ -54,40 +53,39 @@ mod_inputs_server <- function(id, tr, dt_i18n, raw_data, hourly_data) {
         $(window).on('resize.dt', adjust);
       ")
 
-        if (input$view_mode == "raw") {
-          validate(need(!is.null(raw_data()), tr("err_no_raw")))
-          data <- raw_data()
-        } else {
-          validate(need(!is.null(hourly_data()), tr("err_no_hourly")))
-          data <- hourly_data()
-        }
+      if (input$view_mode == "raw") {
+        validate(need(!is.null(raw_data()), tr("err_no_raw")))
+        data <- raw_data()
+      } else {
+        validate(need(!is.null(hourly_data()), tr("err_no_hourly")))
+        data <- hourly_data()
+      }
 
-        DT::datatable(
-          data,
-          rownames = FALSE,
-          fillContainer = TRUE,
-          escape = TRUE,
-          filter = "top",
-          class = "display nowrap compact hover stripe gc-dt",
-          extensions = c("Buttons"),
-          options = list(
-            language = dt_i18n(),
-            autoWidth = FALSE,
-            scrollX = FALSE,
-            scrollY = 360,
-            pageLength = 20,
-            lengthMenu = list(c(10, 20, 50, 100, -1), c("10", "20", "50", "100", "All")),
-            dom = "Blrtip",
-            buttons = list(
-              list(extend = "copy", text = tr("dt_btn_copy")),
-              list(extend = "csv", text = tr("dt_btn_csv"), filename = "inputs"),
-              list(extend = "excel", text = tr("dt_btn_excel"), filename = "inputs")
-            ),
-            initComplete = DT::JS("function(){ this.api().columns.adjust(); }")
+      DT::datatable(
+        data,
+        rownames = FALSE,
+        fillContainer = TRUE,
+        escape = TRUE,
+        filter = "top",
+        class = "display nowrap compact hover stripe gc-dt",
+        extensions = c("Buttons"),
+        options = list(
+          language = dt_i18n(),
+          autoWidth = FALSE,
+          scrollX = FALSE,
+          scrollY = 360,
+          pageLength = 25,
+          lengthMenu = list(c(10, 25, 50, 100, -1), c("10", "25", "50", "100", "All")),
+          dom = "Blrtip",
+          buttons = list(
+            list(extend = "copy", text = tr("dt_btn_copy")),
+            list(extend = "csv", text = tr("dt_btn_csv"), filename = "inputs"),
+            list(extend = "excel", text = tr("dt_btn_excel"), filename = "inputs")
           ),
-          callback = cb
-        )
-      },
-    )
+          initComplete = DT::JS("function(){ this.api().columns.adjust(); }")
+        ),
+        callback = cb
+      )
+    }, )
   })
 }

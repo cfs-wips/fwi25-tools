@@ -19,7 +19,6 @@ mod_fwi87_table_ui <- function(id) {
         $(window).on('resize.dt', adjust);
       });
     ")),
-    
     tags$section(
       class = "gc-card",
       tags$div(role = "region", `aria-label` = "FWI87 results table", uiOutput(ns("title"))),
@@ -30,7 +29,7 @@ mod_fwi87_table_ui <- function(id) {
           div(class = "gc-placeholder__text", uiOutput(ns("hint")))
         ),
         div(
-          class = "gc-spin-wrap",
+          class = "gc-spin-wrap fwi87-tab",
           # ⬇️ fill vertically to card height
           DT::DTOutput(ns("tbl"), width = "100%", height = "100%", fill = TRUE),
           div(
@@ -279,20 +278,20 @@ mod_fwi87_table_server <- function(id, tr, dt_i18n, df87, tz_reactive,
           escape = TRUE,
           fillContainer = TRUE,
           filter = "top",
-          class = "display nowrap compact hover stripe gc-dt datatable",  # add "datatable"
+          class = "display nowrap compact hover stripe gc-dt datatable", # add "datatable"
           extensions = c("Buttons"),
           options = list(
-            language    = dt_i18n(),
-            autoWidth   = FALSE,          # <- match mod_inputs
-            deferRender = TRUE,           # <- match mod_inputs
-            scrollX     = TRUE,          # <- match mod_inputs
-            scrollY     = 240,            # <- match mod_inputs
-            pageLength  = 10,             # <- match mod_inputs
-            lengthMenu  = list(c(10, 20, 50, 100, -1), c("10","20","50","100","All")),
-            dom         = "Blrtip",
-            buttons     = list(
-              list(extend = "copy",  text = tr("dt_btn_copy")),
-              list(extend = "csv",   text = tr("dt_btn_csv"),   filename = "dailyFWI"),
+            language = dt_i18n(),
+            autoWidth = FALSE, # <- match mod_inputs
+            deferRender = TRUE, # <- match mod_inputs
+            scrollX = TRUE, # <- match mod_inputs
+            scrollY = 240, # <- match mod_inputs
+            pageLength = 10, # <- match mod_inputs
+            lengthMenu = list(c(10, 20, 50, 100, -1), c("10", "20", "50", "100", "All")),
+            dom = "Blrtip",
+            buttons = list(
+              list(extend = "copy", text = tr("dt_btn_copy")),
+              list(extend = "csv", text = tr("dt_btn_csv"), filename = "dailyFWI"),
               list(extend = "excel", text = tr("dt_btn_excel"), filename = "dailyFWI")
             ),
             # drop columnDefs width rules for ISO datetime/sunrise/sunset

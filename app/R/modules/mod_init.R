@@ -5,18 +5,22 @@ mod_init_ui <- function(id) {
   tagList(
     fluidRow(
       column(
-        4,
+        3,
+        mod_filter_ui("filter")
+      ),
+      column(
+        3,
         # Label with tooltip as HTML
         uiOutput(ns("lbl_ffmc0")),
         numericInput(ns("ffmc0"), label = NULL, value = 85, min = 0, max = 101, step = 1)
       ),
       column(
-        4,
+        3,
         uiOutput(ns("lbl_dmc0")),
         numericInput(ns("dmc0"), label = NULL, value = 6, min = 0, step = 1)
       ),
       column(
-        4,
+        3,
         uiOutput(ns("lbl_dc0")),
         numericInput(ns("dc0"), label = NULL, value = 15, min = 0, step = 1)
       )

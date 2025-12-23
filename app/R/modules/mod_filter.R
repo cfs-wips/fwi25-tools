@@ -136,18 +136,11 @@ label_with_help_safe <- function(label_text, help_text = NULL) {
 mod_filter_ui <- function(id) {
   ns <- NS(id)
   tagList(
-    h5(id = ns("lbl_filter"), uiOutput(ns("lbl_filter"))),
     div(
       role = "group",
       `aria-labelledby` = ns("lbl_start_date"),
       uiOutput(ns("lbl_start_date")),
-      # IMPORTANT: use value = NULL (not NA/"") to avoid warnings on init/reset
       dateInput(ns("start_date"), label = NULL, value = NULL, width = "240px")
-    ),
-    tags$p(
-      id = ns("help_drop_rows"),
-      class = "help-block",
-      textOutput(ns("txt_drop_rows_help"))
     )
   )
 }
@@ -161,18 +154,12 @@ mod_filter_ui <- function(id) {
 mod_filter_server <- function(id, tr, tz, raw_file, mapping) {
   moduleServer(id, function(input, output, session) {
     # --- i18n text outputs ---
-    output$lbl_filter <- renderUI({
-      label_with_help_safe(tr("filter"), tr("drop_rows_help"))
-    })
-
     output$lbl_start_date <- renderUI({
       tags$label(
         `for` = session$ns("start_date"),
         label_with_help_safe(tr("drop_rows_prior"), tr("tt_start_date"))
       )
     })
-
-    output$txt_drop_rows_help <- renderText(tr("drop_rows_help"))
 
     # Helper to find a column by keyword(s), case-insensitive
     find_col <- function(cols, keywords) {

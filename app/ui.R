@@ -25,80 +25,80 @@ ui <- fluidPage(
     id = "main-content",
     role = "main",
     `aria-label` = "Hourly FWI application",
-
-    div(class = "gc-layout-fill",
-        sidebarLayout(
-          sidebarPanel(
-            width = 4,
-            mod_upload_ui("upload"),
-            tags$form(
-              id = "controls",
-              mod_mapping_ui("mapping"),
-              tags$hr(),
-              mod_timezone_ui("tz"),
-              mod_filter_ui("filter"),
-              mod_init_ui("init"),
-              mod_actions_ui("actions")
-            )
-          ),
-          mainPanel(
-            width = 8,
-            tags$div(
-              id = "tabs-region",
-              role = "region",
-              `aria-label` = "Primary output tabs",
-              tabsetPanel(
-                id = "main_tabs",
-                selected = "Output",
-                tabPanel(
-                  title = textOutput("tab_output_title"),
-                  value = "Output",
-                  conditionalPanel(
-                    condition = "!output.can_show_results",
-                    tags$div(id = "pre-run-output-card", class = "gc-card", uiOutput("pre_run_output_msg"))
-                  ),
-                  conditionalPanel(
-                    condition = "output.can_show_results",
-                    tags$div(
-                      id = "results-wrap",
-                      mod_results_table_ui("results_table"),
-                      mod_fwi87_table_ui("fwi87_table")
-                    )
-                  )
+    div(
+      class = "gc-layout-fill",
+      sidebarLayout(
+        sidebarPanel(
+          width = 4,
+          mod_upload_ui("upload"),
+          tags$form(
+            id = "controls",
+            mod_mapping_ui("mapping"),
+            tags$hr(),
+            mod_timezone_ui("tz"),
+            # mod_filter_ui("filter"),
+            mod_init_ui("init"),
+            mod_actions_ui("actions")
+          )
+        ),
+        mainPanel(
+          width = 8,
+          tags$div(
+            id = "tabs-region",
+            role = "region",
+            `aria-label` = "Primary output tabs",
+            tabsetPanel(
+              id = "main_tabs",
+              selected = "Output",
+              tabPanel(
+                title = textOutput("tab_output_title"),
+                value = "Output",
+                conditionalPanel(
+                  condition = "!output.can_show_results",
+                  tags$div(id = "pre-run-output-card", class = "gc-card", uiOutput("pre_run_output_msg"))
                 ),
-                tabPanel(
-                  title = textOutput("tab_plot_title"),
-                  value = "Plot",
-                  conditionalPanel(
-                    condition = "!output.can_show_results",
-                    tags$div(id = "pre-run-plot", class = "gc-card", uiOutput("pre_run_plot_msg"))
-                  ),
-                  conditionalPanel(
-                    condition = "output.can_show_results",
-                    tags$div(id = "plot-wrap", mod_plot_ui("plot"))
+                conditionalPanel(
+                  condition = "output.can_show_results",
+                  tags$div(
+                    id = "results-wrap",
+                    mod_results_table_ui("results_table"),
+                    mod_fwi87_table_ui("fwi87_table")
                   )
+                )
+              ),
+              tabPanel(
+                title = textOutput("tab_plot_title"),
+                value = "Plot",
+                conditionalPanel(
+                  condition = "!output.can_show_results",
+                  tags$div(id = "pre-run-plot", class = "gc-card", uiOutput("pre_run_plot_msg"))
                 ),
-                tabPanel(
-                  title = textOutput("tab_log_title"),
-                  value = "Log",
-                  tags$div(role = "region", `aria-label` = "Run log", mod_log_ui("log"))
+                conditionalPanel(
+                  condition = "output.can_show_results",
+                  tags$div(id = "plot-wrap", mod_plot_ui("plot"))
+                )
+              ),
+              tabPanel(
+                title = textOutput("tab_log_title"),
+                value = "Log",
+                tags$div(role = "region", `aria-label` = "Run log", mod_log_ui("log"))
+              ),
+              tabPanel(
+                title = textOutput("tab_inputs_title"),
+                value = "Inputs",
+                conditionalPanel(
+                  condition = "!output.can_show_log",
+                  tags$div(id = "pre-run-weather-card", class = "gc-card", uiOutput("pre_run_tables_msg"))
                 ),
-                tabPanel(
-                  title = textOutput("tab_inputs_title"),
-                  value = "Inputs",
-                  conditionalPanel(
-                    condition = "!output.can_show_log",
-                    tags$div(id = "pre-run-weather-card", class = "gc-card", uiOutput("pre_run_tables_msg"))
-                  ),
-                  conditionalPanel(
-                    condition = "output.can_show_log", # Only show Inputs tab when data is ready
-                    mod_inputs_ui("inputs")
-                  )
+                conditionalPanel(
+                  condition = "output.can_show_log", # Only show Inputs tab when data is ready
+                  mod_inputs_ui("inputs")
                 )
               )
             )
           )
         )
+      )
     )
   ),
   tags$footer(
@@ -120,4 +120,3 @@ ui <- fluidPage(
     )
   )
 )
-

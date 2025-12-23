@@ -153,7 +153,7 @@ mod_log_server <- function(
       ), by = for_date][order(for_date)]
       data.table::setnames(daily_chk, "for_date", "date")
       daily_chk[, date := as.Date(date)]
-      print(utils::head(daily_chk, 10))
+      print(daily_chk)
 
       cat("\nNearest-to-noon selection dHour (count):\n")
       noon_tbl <- data.table::as.data.table(

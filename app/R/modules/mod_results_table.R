@@ -18,7 +18,6 @@ mod_results_table_ui <- function(id) {
         $(window).on('resize.dt', adjust);
       });
     ")),
-    
     tags$section(
       class = "gc-card",
       tags$div(role = "region", `aria-label` = "FWI25 results table", uiOutput(ns("title"))),
@@ -29,7 +28,7 @@ mod_results_table_ui <- function(id) {
           div(class = "gc-placeholder__text", uiOutput(ns("hint")))
         ),
         div(
-          class = "gc-spin-wrap",
+          class = "gc-spin-wrap fwi25-tab",
           # ⬇️ make the output a ‘fill item’ so it can grow to card height
           DT::DTOutput(ns("tbl"), width = "100%", height = "100%", fill = TRUE),
           div(
@@ -353,20 +352,20 @@ mod_results_table_server <- function(id, tr, dt_i18n, results, tz_reactive,
           escape = TRUE,
           fillContainer = TRUE,
           filter = "top",
-          class = "display nowrap compact hover stripe gc-dt datatable",  # add "datatable" to help JS hooks
+          class = "display nowrap compact hover stripe gc-dt datatable", # add "datatable" to help JS hooks
           extensions = c("Buttons"),
           options = list(
-            language    = dt_i18n(),
-            autoWidth   = FALSE,          # <- match mod_inputs (reduces width recalcs)
-            deferRender = TRUE,           # <- faster initial draw
-            scrollX     = TRUE,          # <- match mod_inputs
-            scrollY     = 240,            # <- match mod_inputs; adjust if this feels too tall
-            pageLength  = 10,             # <- match mod_inputs
-            lengthMenu  = list(c(10, 20, 50, 100, -1), c("10","20","50","100","All")),
-            dom         = "Blrtip",
-            buttons     = list(
-              list(extend = "copy",  text = tr("dt_btn_copy")),
-              list(extend = "csv",   text = tr("dt_btn_csv"),   filename = "results"),
+            language = dt_i18n(),
+            autoWidth = FALSE, # <- match mod_inputs (reduces width recalcs)
+            deferRender = TRUE, # <- faster initial draw
+            scrollX = TRUE, # <- match mod_inputs
+            scrollY = 240, # <- match mod_inputs; adjust if this feels too tall
+            pageLength = 10, # <- match mod_inputs
+            lengthMenu = list(c(10, 20, 50, 100, -1), c("10", "20", "50", "100", "All")),
+            dom = "Blrtip",
+            buttons = list(
+              list(extend = "copy", text = tr("dt_btn_copy")),
+              list(extend = "csv", text = tr("dt_btn_csv"), filename = "results"),
               list(extend = "excel", text = tr("dt_btn_excel"), filename = "results")
             ),
             # remove explicit columnDefs widths for better consistency
@@ -375,10 +374,9 @@ mod_results_table_server <- function(id, tr, dt_i18n, results, tz_reactive,
           ),
           callback = cb
         )
-        
-  },
-  server = FALSE
-  )
+      },
+      server = FALSE
+    )
     outputOptions(output, "tbl", suspendWhenHidden = FALSE)
   })
 }
