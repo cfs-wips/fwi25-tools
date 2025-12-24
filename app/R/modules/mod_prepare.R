@@ -6,6 +6,7 @@ mod_prepare_server <- function(
   raw_file,
   mapping,
   tz,
+  filter,
   diurnal_method_reactive = shiny::reactive("BT-default"),
   notify = TRUE
 ) {
@@ -737,6 +738,70 @@ mod_prepare_server <- function(
       )
     }
 
+    # --- NEW: Trim source by filter start_date (keep rows on/after the date) ---
+    trim_src_by_start_date <- function(df, start_date, tz_string) {
+      # If no start_date, return as-is
+      if (is.null(start_date)) {
+        return(data.table::as.data.table(df))
+      }
+
+      dt <- data.table::as.data.table(df)
+      dt <- dt_prepare_for_add(dt)
+      cols <- resolve_cols(dt)
+
+      # Try to get a usable per-row Date vector
+      date_vec <- NULL
+
+      # 1) Prefer timestamp if present (canonicalize if needed)
+      if ("timestamp" %in% names(dt)) {
+        # ensure POSIXct timestamp (non-throwing)
+        dt <- tryCatch(canonize_time_columns(dt, tz_string, cols), error = function(e) dt)
+        date_vec <- suppressWarnings(as.Date(dt$timestamp, tz = tz_string))
+      }
+
+      # 2) Fallback: build Date from Y/M/D parts
+      if (is.null(date_vec) || all(is.na(date_vec))) {
+        if (!is.null(cols$yr) && !is.null(cols$mon) && !is.null(cols$day) &&
+          cols$yr %in% names(dt) && cols$mon %in% names(dt) && cols$day %in% names(dt)) {
+          y <- suppressWarnings(as.integer(dt[[cols$yr]]))
+          m <- suppressWarnings(as.integer(dt[[cols$mon]]))
+          d <- suppressWarnings(as.integer(dt[[cols$day]]))
+          date_vec <- suppressWarnings(as.Date(sprintf("%04d-%02d-%02d", y, m, d)))
+        }
+      }
+
+      # 3) Last resort: mapped or native 'date' column
+      if (is.null(date_vec) || all(is.na(date_vec))) {
+        if (!is.null(cols$date) && cols$date %in% names(dt)) {
+          date_vec <- suppressWarnings(as.Date(dt[[cols$date]]))
+        }
+      }
+
+      # Could not derive any usable date; warn and return unchanged
+      if (is.null(date_vec) || all(is.na(date_vec))) {
+        emit_toast(sprintf(
+          "[Prepare][WARN] Could not trim: no usable date/timestamp; start_date=%s",
+          as.character(start_date)
+        ), "warning", 6)
+        return(dt[])
+      }
+
+      keep_idx <- which(date_vec >= start_date)
+
+      # If nothing remains, warn and return 0-row DT (caller will handle downstream)
+      if (!length(keep_idx)) {
+        emit_toast(sprintf(
+          "[Prepare][WARN] Trimmed away all rows prior to %s; nothing left to prepare.",
+          as.character(start_date)
+        ), "warning", 7)
+        return(dt[0])
+      }
+
+      trimmed <- dt[keep_idx]
+      trimmed[]
+    }
+
+
     detect_resolution <- function(df, tz_string) {
       dt <- data.table::as.data.table(df)
       rc <- resolve_cols(dt)
@@ -834,7 +899,7 @@ mod_prepare_server <- function(
       list(kind = "unknown", seq_ok = NA, reasons = c(reasons, sprintf("unknown: names=%s", paste(names(dt), collapse = ", "))))
     }
 
-    attach_provenance <- function(out, source, conversion, tz_string, offset_policy, prepared_at, offset_hours = NA) {
+    attach_provenance <- function(out, source, conversion, tz_string, offset_policy, prepared_at, offset_hours = NA, start_date_used = NULL) {
       tz_off <- if (is.na(offset_hours)) as.integer(format(as.POSIXct(Sys.time(), tz = tz_string), "%z")) / 100 else offset_hours
       # include mapping_signature for cache/telemetry clarity
       sig <- paste(
@@ -854,7 +919,8 @@ mod_prepare_server <- function(
       )
       attr(out, "provenance") <- list(
         source = source, conversion = conversion, tz = tz_string, offset_policy = offset_policy,
-        offset_hours = tz_off, prepared_at = prepared_at, mapping_signature = sig
+        offset_hours = tz_off, prepared_at = prepared_at, mapping_signature = sig,
+        start_date_used = if (is.null(start_date_used)) NA_character_ else as.character(start_date_used)
       )
       out
     }
@@ -896,7 +962,8 @@ mod_prepare_server <- function(
         diurnal_method_reactive(), # diurnal method changes
         mapping_fp(), # column mapping fingerprint changes
         mapping$manual_lat(), # add numeric lat trigger
-        mapping$manual_lon() # add numeric lon trigger
+        mapping$manual_lon(), # add numeric lon trigger
+        filter$start_date() # added a trigger on start date
       ),
       {
         shiny::req(raw_file(), isTRUE(tz$tz_ready()))
@@ -907,11 +974,13 @@ mod_prepare_server <- function(
         dm <- diurnal_method_reactive()
         if (!is.character(dm) || !nzchar(dm)) dm <- "BT-default"
         message(sprintf("[Prepare][INFO] Using TZ=%s (policy=%s)", tz_use_val, offset_policy_val))
+        start_date_val <- tryCatch(filter$start_date(), error = function(e) NULL)
         list(
           src = raw_file(),
           tz_string = tz_use_val,
           offset_policy = offset_policy_val,
-          diurnal = dm
+          diurnal = dm,
+          start_date = start_date_val
         )
       },
       ignoreInit = TRUE
@@ -963,6 +1032,40 @@ mod_prepare_server <- function(
       n_rows_in <- nrow(src)
       station_count <- if ("id" %in% names(src)) length(unique(src$id)) else 1L
 
+      # --- NEW: trim the start of the dataset before detection & conversions ---
+      if (!is.null(args$start_date)) {
+        before <- nrow(src)
+        src <- trim_src_by_start_date(src, args$start_date, tz_string)
+        after <- nrow(src)
+        trimmed_n <- before - after
+        if (trimmed_n > 0) {
+          logs <- c(logs, sprintf(
+            "[Prepare] Trimmed %d row(s) prior to %s.",
+            trimmed_n, format(args$start_date)
+          ))
+        }
+        # Recompute counts after trimming (detection should operate on trimmed source)
+        n_rows_in <- nrow(src)
+        station_count <- if ("id" %in% names(src)) length(unique(src$id)) else 1L
+
+        # If nothing remains, short-circuit with a friendly message
+        if (n_rows_in == 0L) {
+          emit_toast("[Prepare] No rows remain after applying start date filter.", "warning", 6)
+          raw_like_rv(data.frame())
+          daily_src_rv(NULL)
+          finished_at <- Sys.time()
+          t_total_ms <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
+          meta_rv(list(
+            kind = "unknown", converted = NA, failed = FALSE, tz = tz_string,
+            offset_policy = offset_policy, diurnal = dia, log = logs,
+            t_detect_ms = NA_real_, t_convert_ms = 0.0, t_total_ms = t_total_ms,
+            n_rows_in = 0L, n_rows_out = 0L, station_count = 0L,
+            run_id = run_id_rv() + 1L, started_at = started_at, finished_at = finished_at
+          ))
+          return()
+        }
+      }
+
       t_det_start <- proc.time()
       det <- detect_resolution(src, tz_string)
       t_detect_ms <- as.numeric((proc.time() - t_det_start)[["elapsed"]]) * 1000
@@ -987,7 +1090,7 @@ mod_prepare_server <- function(
         out_dt <- promote_canonical_vars(out_dt, cols_out)
         out_dt <- prune_to_canonical(out_dt)
         try(validate_canonical(out_dt), silent = TRUE)
-        out <- attach_provenance(out_dt, "hourly", "passthrough", tz_string, offset_policy, started_at, offset_hours = NA)
+        out <- attach_provenance(out_dt, "hourly", "passthrough", tz_string, offset_policy, started_at, offset_hours = NA,start_date_used=args$start_date)
         setorderv(out, "timestamp")
         # Simple dedup before publishing
         out <- simple_dedup_by_key(out)
@@ -1098,7 +1201,7 @@ mod_prepare_server <- function(
               out <- promote_canonical_vars(out, cols_out)
               out <- prune_to_canonical(out)
               try(validate_canonical(out), silent = TRUE)
-              out <- attach_provenance(out, "hourly", paste0("replace_stream(dailyNoon→hourly:", dia, ")"), tz_string, offset_policy, started_at)
+              out <- attach_provenance(out, "hourly", paste0("replace_stream(dailyNoon→hourly:", dia, ")"), tz_string, offset_policy, started_at, start_date_used=args$start_date)
               setorderv(out, "timestamp")
               # Simple dedup before publishing
               out <- simple_dedup_by_key(out)
@@ -1136,7 +1239,7 @@ mod_prepare_server <- function(
             out <- promote_canonical_vars(out, cols_out)
             out <- prune_to_canonical(out)
             try(validate_canonical(out), silent = TRUE)
-            out <- attach_provenance(out, "hourly", paste0("gapFill(daily→hourly:", dia, ")"), tz_string, offset_policy, started_at)
+            out <- attach_provenance(out, "hourly", paste0("gapFill(daily→hourly:", dia, ")"), tz_string, offset_policy, started_at,start_date_used=args$start_date)
             setorderv(out, "timestamp")
             # Simple dedup before publishing
             out <- simple_dedup_by_key(out)
@@ -1193,7 +1296,7 @@ mod_prepare_server <- function(
         out <- promote_canonical_vars(out, cols_out)
         out <- prune_to_canonical(out)
         try(validate_canonical(out), silent = TRUE)
-        out <- attach_provenance(out, "daily_one_hour", paste0("daily→hourly(", dia, ")"), tz_string, offset_policy, started_at, offset_hours = res$tz_off)
+        out <- attach_provenance(out, "daily_one_hour", paste0("daily→hourly(", dia, ")"), tz_string, offset_policy, started_at, offset_hours = res$tz_off,start_date_used=args$start_date)
         setorderv(out, "timestamp")
         # Simple dedup before publishing
         out <- simple_dedup_by_key(out)
@@ -1237,7 +1340,7 @@ mod_prepare_server <- function(
         out <- promote_canonical_vars(out, cols_out)
         out <- prune_to_canonical(out)
         try(validate_canonical(out), silent = TRUE)
-        out <- attach_provenance(out, "daily", paste0("daily→hourly(", dia, ")"), tz_string, offset_policy, started_at, offset_hours = res$tz_off)
+        out <- attach_provenance(out, "daily", paste0("daily→hourly(", dia, ")"), tz_string, offset_policy, started_at, offset_hours = res$tz_off,start_date_used=args$start_date)
         setorderv(out, "timestamp")
         # Simple dedup before publishing
         out <- simple_dedup_by_key(out)

@@ -1,7 +1,7 @@
 server <- function(input, output, session) {
   reset_token <- reactiveVal(0L)
   bump_reset <- function() reset_token(isolate(reset_token()) + 1L)
-  
+
   # ---- i18n / language & UI texts ----
   i18n <- mod_i18n_server("i18n", session_title = TRUE)
   tr <- i18n$tr
@@ -30,14 +30,14 @@ server <- function(input, output, session) {
 
   tz <- mod_timezone_server(
     id = "tz", tr,
-    manual_lat    = map$manual_lat,
-    manual_lon    = map$manual_lon,
-    browser_tz    = reactive(input$tz_browser),
+    manual_lat = map$manual_lat,
+    manual_lon = map$manual_lon,
+    browser_tz = reactive(input$tz_browser),
     lookup_result = reactive(input$tz_lookup_result),
-    raw_file      = up$raw_file,
-    reset         = reactive(reset_token())
+    raw_file = up$raw_file,
+    reset = reactive(reset_token())
   )
-
+  fil <- mod_filter_server("filter", isolate(tr), tz, raw_file = up$raw_file, mapping = map)
   init <- mod_init_server("init", isolate(tr))
 
   # ---- Prepare (daily→hourly) ----
@@ -46,6 +46,7 @@ server <- function(input, output, session) {
     raw_file = up$raw_file, # or however your upload module exposes it
     mapping = map, # object with mapping$col_* reactives
     tz = tz, # object with tz$tz_use(), tz$tz_offset_policy()
+    filter = fil,
     diurnal_method_reactive = reactive(input$diurnal_method),
     notify = TRUE
   )
@@ -65,7 +66,6 @@ server <- function(input, output, session) {
   })
   outputOptions(output, "can_show_log", suspendWhenHidden = FALSE)
 
-  fil <- mod_filter_server("filter", isolate(tr), tz, raw_file = up$raw_file, mapping = map)
 
   run_token <- reactiveVal(0L)
 
