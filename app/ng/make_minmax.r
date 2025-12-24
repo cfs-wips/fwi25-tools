@@ -1,6 +1,5 @@
 # convert daily weather into min/max weather format
-library(data.table)
-source("ng/util.r")
+
 
 #' Convert daily temperature at 1pm (noon standard time) to daily min/max
 #'

@@ -1,7 +1,4 @@
 #' Computes hourly FWI indices for an input hourly weather stream
-library(lubridate)
-library(data.table)
-source("ng/util.r")
 
 
 DAILY_K_DMC_DRYING <- 1.894
@@ -15,8 +12,8 @@ DC_OFFSET_TEMP <- 0.0
 DC_DAILY_CONST <- 0.36
 DC_HOURLY_CONST <- DC_DAILY_CONST / DAILY_K_DC_DRYING
 
-OFFSET_SUNRISE <- 0 ##2.5
-OFFSET_SUNSET <- 0 ##0.5
+OFFSET_SUNRISE <- 0 ## 2.5
+OFFSET_SUNSET <- 0 ## 0.5
 
 # Fuel Load (kg/m^2)
 DEFAULT_GRASS_FUEL_LOAD <- 0.35
@@ -45,22 +42,22 @@ mcffmc_to_ffmc <- function(mcffmc) {
 
 # Duff Moisture Code (DMC) to duff moisture content (%)
 dmc_to_mcdmc <- function(dmc) {
-   return((280 / exp(dmc / 43.43)) + 20)
+  return((280 / exp(dmc / 43.43)) + 20)
 }
 
 # duff moisture content (%) to DMC
 mcdmc_to_dmc <- function(mcdmc) {
-   return(43.43 * log(280 / (mcdmc - 20)))
+  return(43.43 * log(280 / (mcdmc - 20)))
 }
 
 # Drought Code (DC) to DC moisture content(%)
 dc_to_mcdc <- function(dc) {
-   return(400 * exp(-dc / 400))
+  return(400 * exp(-dc / 400))
 }
 
 # DC moisture content (%) to DC
 mcdc_to_dc <- function(mcdc) {
-   return(400 * log(400 / mcdc))
+  return(400 * log(400 / mcdc))
 }
 
 #' Calculate hourly fine fuel moisture content. Needs to be converted to get FFMC
@@ -125,10 +122,11 @@ duff_moisture_code <- function(
   sunrise,
   sunset,
   prec_cumulative_prev,
-  time_increment = 1.0) {
+  time_increment = 1.0
+) {
   # wetting
-  if (prec_cumulative_prev + prec > DMC_INTERCEPT) {  # prec_cumulative above threshold
-    if (prec_cumulative_prev < DMC_INTERCEPT) {  # just passed threshold
+  if (prec_cumulative_prev + prec > DMC_INTERCEPT) { # prec_cumulative above threshold
+    if (prec_cumulative_prev < DMC_INTERCEPT) { # just passed threshold
       rw <- (prec_cumulative_prev + prec) * 0.92 - 1.27
     } else {
       rw <- prec * 0.92
@@ -157,14 +155,14 @@ duff_moisture_code <- function(
   sunset_start <- sunset + OFFSET_SUNSET
   # since sunset can be > 24, in some cases we ignore change between days and check hr + 24
   if ((hr >= sunrise_start && hr <= sunset_start) ||
-    (hr < 6 && (hr + 24 >= sunrise_start && hr + 24 <= sunset_start))) {  # daytime
+    (hr < 6 && (hr + 24 >= sunrise_start && hr + 24 <= sunset_start))) { # daytime
     if (temp < 0) {
       temp <- 0.0
     }
     rk <- HOURLY_K_DMC * 1e-4 * (temp + DMC_OFFSET_TEMP) * (100.0 - rh)
     invtau <- rk / 43.43
     mcdmc <- (mr - 20.0) * exp(-time_increment * invtau) + 20.0
-  } else {  # nighttime
+  } else { # nighttime
     mcdmc <- mr
   }
 
@@ -194,12 +192,13 @@ drought_code <- function(
   sunrise,
   sunset,
   prec_cumulative_prev,
-  time_increment = 1.0) {
+  time_increment = 1.0
+) {
   # wetting
-  if (prec_cumulative_prev + prec > DC_INTERCEPT) {  # prec_cumulative above threshold
-    if (prec_cumulative_prev <= DC_INTERCEPT) {  # just passed threshold
+  if (prec_cumulative_prev + prec > DC_INTERCEPT) { # prec_cumulative above threshold
+    if (prec_cumulative_prev <= DC_INTERCEPT) { # just passed threshold
       rw <- (prec_cumulative_prev + prec) * 0.83 - 1.27
-    } else {  # previously passed threshold
+    } else { # previously passed threshold
       rw <- prec * 0.83
     }
     mr <- last_mcdc + 3.937 * rw / 2.0
@@ -216,7 +215,7 @@ drought_code <- function(
   sunset_start <- sunset + OFFSET_SUNSET
   # since sunset can be > 24, in some cases we ignore change between days and check hr + 24
   if ((hr >= sunrise_start && hr <= sunset_start) ||
-    (hr < 6 && (hr + 24 >= sunrise_start && hr + 24 <= sunset_start))) {  # daytime
+    (hr < 6 && (hr + 24 >= sunrise_start && hr + 24 <= sunset_start))) { # daytime
     offset <- 3.0
     mult <- 0.015
     if (temp > 0) {
@@ -226,7 +225,7 @@ drought_code <- function(
     }
     invtau <- pe / 400.0
     mcdc <- mr * exp(-time_increment * invtau)
-  } else {  # nighttime
+  } else { # nighttime
     mcdc <- mr
   }
 
@@ -317,7 +316,8 @@ hourly_grass_fuel_moisture <- function(
   rain,
   solrad,
   load,
-  time_increment = 1.0) {
+  time_increment = 1.0
+) {
   # MARK II of the model (2016) wth new solar rad model specific to grass
   #
   # DRF of 1/16.1 comes from reducting the standard response time curve
@@ -379,7 +379,7 @@ hourly_grass_fuel_moisture <- function(
       moe <- moew
     }
     if (a1 < 0) {
-      #avoids complex number in a1^1.7 xkd calculation
+      # avoids complex number in a1^1.7 xkd calculation
       a1 <- 0
     }
     xkd <- 0.424 * (1 - a1^1.7) + (0.0694 * sqrt(ws) * (1 - a1^8))
@@ -458,7 +458,7 @@ mcgfmc_to_gfmc <- function(mc, cur, wind) {
   )
   # /*   convert to code with FF-scale */
   # return (59.5*(250.0-egmc)/(MPCT_TO_MC + egmc))
-  if (egmc > 250.0){
+  if (egmc > 250.0) {
     egmc <- 250.0
   }
   return(mcffmc_to_ffmc(egmc))
@@ -485,7 +485,7 @@ matted_grass_spread_ROS <- function(ws, mc, cur) {
       )
     )
   )
-  if (fm < 0){
+  if (fm < 0) {
     fm <- 0.0
   }
   cf <- curing_factor(cur)
@@ -516,7 +516,7 @@ standing_grass_spread_ROS <- function(ws, mc, cur) {
       )
     )
   )
-  if (fm < 0){
+  if (fm < 0) {
     fm <- 0.0
   }
   cf <- curing_factor(cur)
@@ -533,20 +533,19 @@ standing_grass_spread_ROS <- function(ws, mc, cur) {
 grass_spread_index <- function(ws, mc, cur, standing) {
   #  So we don't have to transition midseason between standing and matted grass spread rate models
   #  We will simply scale   GSI   by the average of the   matted and standing spread rates
-  #ros <- (matted_grass_spread_ROS(ws, mc, cur) + standing_grass_spread_ROS(ws, mc, cur)) / 2.0
-  
-  
-  #now allowing switch between standing and matted grass
+  # ros <- (matted_grass_spread_ROS(ws, mc, cur) + standing_grass_spread_ROS(ws, mc, cur)) / 2.0
+
+
+  # now allowing switch between standing and matted grass
   ros <- NULL
-  if (standing){
-    #standing
+  if (standing) {
+    # standing
     ros <- standing_grass_spread_ROS(ws, mc, cur)
-  }
-  else {
-    #matted
+  } else {
+    # matted
     ros <- matted_grass_spread_ROS(ws, mc, cur)
   }
-  
+
   return(1.11 * ros)
 }
 
@@ -567,7 +566,7 @@ grass_fire_weather_index <- Vectorize(function(gsi, load) {
 })
 
 # Calculate number of drying "units" this hour contributes
-drying_units <- function() {  # temp, rh, ws, rain, solrad
+drying_units <- function() { # temp, rh, ws, rain, solrad
   # for now, just add 1 drying "unit" per hour
   return(1.0)
 }
@@ -575,7 +574,7 @@ drying_units <- function() {  # temp, rh, ws, rain, solrad
 rain_since_intercept_reset <- function(rain, canopy) {
   # for now, want 5 "units" of drying (which is 1 per hour to start)
   TARGET_DRYING_SINCE_INTERCEPT <- 5.0
-  if (rain > 0 || canopy$rain_total_prev == 0) {  # if raining, reset drying
+  if (rain > 0 || canopy$rain_total_prev == 0) { # if raining, reset drying
     canopy$drying_since_intercept <- 0.0
   } else {
     canopy$drying_since_intercept <- canopy$drying_since_intercept + drying_units()
@@ -609,7 +608,8 @@ rain_since_intercept_reset <- function(rain, canopy) {
   mcgfmc_matted_old,
   mcgfmc_standing_old,
   prec_cumulative,
-  canopy_drying) {
+  canopy_drying
+) {
   if (length(na.omit(unique(w$yr))) != 1) {
     # only a warning for cases where data extends between years (e.g. southern hemisphere)
     warning("_stnHFWI() function received more than one year")
@@ -651,17 +651,19 @@ rain_since_intercept_reset <- function(rain, canopy) {
   mcdmc <- dmc_to_mcdmc(dmc_old)
   mcdc <- dc_to_mcdc(dc_old)
   # FIX: just use loop for now so it matches C code
-  canopy <- list(rain_total_prev = prec_cumulative,
-    drying_since_intercept = canopy_drying)
+  canopy <- list(
+    rain_total_prev = prec_cumulative,
+    drying_since_intercept = canopy_drying
+  )
   results <- NULL
   N <- nrow(r)
   for (i in 1:N) {
     cur <- copy(r[i])
     canopy <- rain_since_intercept_reset(cur$prec, canopy)
     # determine rain for ffmc and whether or not intercept should happen now
-    if (canopy$rain_total_prev + cur$prec <= FFMC_INTERCEPT) {  # not enough rain
+    if (canopy$rain_total_prev + cur$prec <= FFMC_INTERCEPT) { # not enough rain
       rain_ffmc <- 0.0
-    } else if (canopy$rain_total_prev > FFMC_INTERCEPT) {  # already saturated canopy
+    } else if (canopy$rain_total_prev > FFMC_INTERCEPT) { # already saturated canopy
       rain_ffmc <- cur$prec
     } else {
       rain_ffmc <- canopy$rain_total_prev + cur$prec - FFMC_INTERCEPT
@@ -716,13 +718,13 @@ rain_since_intercept_reset <- function(rain, canopy) {
       cur$solrad,
       cur$grass_fuel_load
     )
-    #for standing grass we make a come very simplifying assumptions based on obs from the field (echo bay study):
-    #standing not really affected by rain -- to introduce some effect we introduce just a simplification of the FFMC Rain absorption function
-    #which averages 6% or so for rains  (<5mm...between 7% and 5%,    lower for larger rains)(NO intercept)
-    #AND the solar radiation exposure is less, and the cooling from the wind is stronger.  SO we assume there is effectively no extra
-    #heating of the grass from solar
-    #working at the margin like this should make a nice bracket for moisture between the matted and standing that users can use
-    #...reality will be in between the matt and stand
+    # for standing grass we make a come very simplifying assumptions based on obs from the field (echo bay study):
+    # standing not really affected by rain -- to introduce some effect we introduce just a simplification of the FFMC Rain absorption function
+    # which averages 6% or so for rains  (<5mm...between 7% and 5%,    lower for larger rains)(NO intercept)
+    # AND the solar radiation exposure is less, and the cooling from the wind is stronger.  SO we assume there is effectively no extra
+    # heating of the grass from solar
+    # working at the margin like this should make a nice bracket for moisture between the matted and standing that users can use
+    # ...reality will be in between the matt and stand
     mcgfmc_standing <- hourly_grass_fuel_moisture(
       mcgfmc_standing,
       cur$temp,
@@ -783,8 +785,7 @@ hFWI <- function(
   canopy_drying = 0.0,
   silent = FALSE,
   round_out = 4
-  ) {
-
+) {
   # check df_wx class for data.frame or data.table
   wasDT <- is.data.table(df_wx)
   if (wasDT) {
@@ -795,7 +796,7 @@ hFWI <- function(
   } else {
     stop("Input weather stream df_wx needs to be a data.frame or data.table!")
   }
-  
+
   # make all column names lower case
   colnames(wx) <- tolower(colnames(wx))
   og_names <- names(wx)
@@ -822,8 +823,10 @@ hFWI <- function(
     dmc_old == DMC_DEFAULT && dc_old == DC_DEFAULT &&
     mcgfmc_matted_old == ffmc_to_mcffmc(FFMC_DEFAULT) &&
     mcgfmc_standing_old == ffmc_to_mcffmc(FFMC_DEFAULT)) {
-    warning(paste("Startup moisture values set to default (instead of previous)",
-      "in a one hour run"))
+    warning(paste(
+      "Startup moisture values set to default (instead of previous)",
+      "in a one hour run"
+    ))
   }
   # check for optional columns that have a default
   hadStn <- "id" %in% og_names
@@ -842,8 +845,10 @@ hFWI <- function(
   }
   if (!hadTimestamp) {
     # as_datetime() defaults to UTC, but we only use timestamp for it's combined yr, mon, day, hr
-    wx[, timestamp := as_datetime(sprintf("%04d-%02d-%02d %02d:%02d:00",
-      yr, mon, day, hr, minute))]
+    wx[, timestamp := as_datetime(sprintf(
+      "%04d-%02d-%02d %02d:%02d:00",
+      yr, mon, day, hr, minute
+    ))]
   }
   if (!"grass_fuel_load" %in% og_names) {
     wx$grass_fuel_load <- DEFAULT_GRASS_FUEL_LOAD
@@ -862,8 +867,10 @@ hFWI <- function(
   # check for unnecessary columns
   cols_extra_solar <- intersect(names(wx), c("sunrise", "sunset", "sunlight_hours"))
   if (0 < length(cols_extra_solar)) {
-    warning(sprintf("Ignoring and recalculating columns: [%s]",
-      paste0(cols_extra_solar, collapse = ", ")))
+    warning(sprintf(
+      "Ignoring and recalculating columns: [%s]",
+      paste0(cols_extra_solar, collapse = ", ")
+    ))
     wx <- wx[, -..cols_extra_solar]
   }
   # check for values outside valid ranges
@@ -906,9 +913,11 @@ hFWI <- function(
       }
       # FIX: convert this to not need to do individual stations
       w <- get_sunlight(by_y, get_solrad = needs_solrad)
-      r <- .stnHFWI(w, ffmc_old, mcffmc_old, dmc_old, dc_old,
+      r <- .stnHFWI(
+        w, ffmc_old, mcffmc_old, dmc_old, dc_old,
         mcgfmc_matted_old, mcgfmc_standing_old,
-        prec_cumulative, canopy_drying)
+        prec_cumulative, canopy_drying
+      )
       results <- rbind(results, r)
     }
   }
@@ -929,12 +938,14 @@ hFWI <- function(
 
   # format decimal places of output columns
   if (!(is.na(round_out) || round_out == "NA")) {
-    outcols <- c("sunrise", "sunset", "sunlight_hours",
+    outcols <- c(
+      "sunrise", "sunset", "sunlight_hours",
       "mcffmc", "ffmc", "dmc", "dc", "isi", "bui", "fwi", "dsr",
       "mcgfmc_matted", "mcgfmc_standing", "gfmc", "gsi", "gfwi",
-      "prec_cumulative", "canopy_drying")
+      "prec_cumulative", "canopy_drying"
+    )
     if (!"solrad" %in% og_names) {
-      outcols <- c('solrad', outcols)
+      outcols <- c("solrad", outcols)
     }
     set(results, j = outcols, value = round(results[, ..outcols], as.integer(round_out)))
   }
@@ -956,33 +967,68 @@ if ("--args" %in% commandArgs() && sys.nframe() == 0) {
   input <- args[1]
   output <- args[2]
   # load optional arguments if provided, or set to default
-  if (length(args) >= 3) timezone <- args[3]
-  else timezone <- NA
-  if (length(args) >= 4) ffmc_old <- as.numeric(args[3])
-  else ffmc_old <- FFMC_DEFAULT
-  if (length(args) >= 5) mcffmc_old <- as.logical(args[4])
-  else mcffmc_old <- NA
-  if (length(args) >= 6) dmc_old <- as.numeric(args[5])
-  else dmc_old <- DMC_DEFAULT
-  if (length(args) >= 7) dc_old <- as.numeric(args[6])
-  else dc_old <- DC_DEFAULT
-  if (length(args) >= 8) mcgfmc_matted_old <- as.numeric(args[7])
-  else mcgfmc_matted_old <- ffmc_to_mcffmc(FFMC_DEFAULT)
-  if (length(args) >= 9) mcgfmc_standing_old <- as.numeric(args[8])
-  else mcgfmc_standing_old <- ffmc_to_mcffmc(FFMC_DEFAULT)
-  if (length(args) >= 10) prec_cumulative <- as.numeric(args[9])
-  else prec_cumulative <- 0.0
-  if (length(args) >= 11) canopy_drying <- as.numeric(args[10])
-  else canopy_drying <- 0.0
-  if (length(args) >= 12) silent <- as.logical(args[11])
-  else silent <- FALSE
-  if (length(args) >= 13) round_out <- args[12]
-  else round_out <- 4
+  if (length(args) >= 3) {
+    timezone <- args[3]
+  } else {
+    timezone <- NA
+  }
+  if (length(args) >= 4) {
+    ffmc_old <- as.numeric(args[3])
+  } else {
+    ffmc_old <- FFMC_DEFAULT
+  }
+  if (length(args) >= 5) {
+    mcffmc_old <- as.logical(args[4])
+  } else {
+    mcffmc_old <- NA
+  }
+  if (length(args) >= 6) {
+    dmc_old <- as.numeric(args[5])
+  } else {
+    dmc_old <- DMC_DEFAULT
+  }
+  if (length(args) >= 7) {
+    dc_old <- as.numeric(args[6])
+  } else {
+    dc_old <- DC_DEFAULT
+  }
+  if (length(args) >= 8) {
+    mcgfmc_matted_old <- as.numeric(args[7])
+  } else {
+    mcgfmc_matted_old <- ffmc_to_mcffmc(FFMC_DEFAULT)
+  }
+  if (length(args) >= 9) {
+    mcgfmc_standing_old <- as.numeric(args[8])
+  } else {
+    mcgfmc_standing_old <- ffmc_to_mcffmc(FFMC_DEFAULT)
+  }
+  if (length(args) >= 10) {
+    prec_cumulative <- as.numeric(args[9])
+  } else {
+    prec_cumulative <- 0.0
+  }
+  if (length(args) >= 11) {
+    canopy_drying <- as.numeric(args[10])
+  } else {
+    canopy_drying <- 0.0
+  }
+  if (length(args) >= 12) {
+    silent <- as.logical(args[11])
+  } else {
+    silent <- FALSE
+  }
+  if (length(args) >= 13) {
+    round_out <- args[12]
+  } else {
+    round_out <- 4
+  }
   if (length(args) >= 14) warning("Too many input arguments provided, some unused")
 
   df_in <- read.csv(input)
-  df_out <- hFWI(df_in, timezone, ffmc_old, mcffmc_old, dmc_old, dc_old,
+  df_out <- hFWI(
+    df_in, timezone, ffmc_old, mcffmc_old, dmc_old, dc_old,
     mcgfmc_matted_old, mcgfmc_standing_old, prec_cumulative, canopy_drying,
-    silent, round_out)
+    silent, round_out
+  )
   write.csv(df_out, output, row.names = FALSE)
 }

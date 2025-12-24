@@ -22,9 +22,6 @@ mod_prepare_server <- function(
       emit_toast(msg, "error", 6)
     }
 
-    # Dependencies
-    source("ng/make_minmax.r") # daily_to_minmax()
-    source("ng/make_hourly.r") # minmax_to_hourly()
 
     .norm <- function(x) gsub("[^a-z0-9]", "", tolower(x))
     .map_get <- function(fun) {
@@ -1190,7 +1187,7 @@ mod_prepare_server <- function(
         setorderv(out, "timestamp")
         # Simple dedup before publishing
         out <- simple_dedup_by_key(out)
-        out <- fix_single_blank_id(out) 
+        out <- fix_single_blank_id(out)
         raw_like_rv(out)
         daily_src_rv(NULL)
         finished_at <- Sys.time()
@@ -1302,7 +1299,7 @@ mod_prepare_server <- function(
               setorderv(out, "timestamp")
               # Simple dedup before publishing
               out <- simple_dedup_by_key(out)
-              out <- fix_single_blank_id(out) 
+              out <- fix_single_blank_id(out)
               raw_like_rv(out)
 
               daily_src_rv(NULL)
@@ -1341,7 +1338,7 @@ mod_prepare_server <- function(
             setorderv(out, "timestamp")
             # Simple dedup before publishing
             out <- simple_dedup_by_key(out)
-            out <- fix_single_blank_id(out) 
+            out <- fix_single_blank_id(out)
             raw_like_rv(out)
 
             daily_src_rv(NULL)
@@ -1399,7 +1396,7 @@ mod_prepare_server <- function(
         setorderv(out, "timestamp")
         # Simple dedup before publishing
         out <- simple_dedup_by_key(out)
-        out <- fix_single_blank_id(out) 
+        out <- fix_single_blank_id(out)
         raw_like_rv(out)
         finished_at <- Sys.time()
         t_total_ms <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
@@ -1444,7 +1441,7 @@ mod_prepare_server <- function(
         setorderv(out, "timestamp")
         # Simple dedup before publishing
         out <- simple_dedup_by_key(out)
-        out <- fix_single_blank_id(out) 
+        out <- fix_single_blank_id(out)
         raw_like_rv(out)
         finished_at <- Sys.time()
         t_total_ms <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000

@@ -2,11 +2,11 @@
 (function () {
   'use strict';
 
-  // --------------------------
+  // -------------------------------------------------
   // Logging helpers
-  // --------------------------
+  // -------------------------------------------------
   const LOG_PREFIX = '[FWI25:init]';
-  const LS_KEY     = 'fwi25_debug';
+  const LS_KEY = 'fwi25_debug';
   const debugEnabled =
     (new URLSearchParams(window.location.search).get('debug') === '1') ||
     (typeof localStorage !== 'undefined' && localStorage.getItem(LS_KEY) === '1');
@@ -17,21 +17,12 @@
     error: (...args) => console.error(LOG_PREFIX, ...args),
     debug: (...args) => { if (debugEnabled) console.debug(LOG_PREFIX, ...args); }
   };
-
   log.info('Bootstrap starting', { debugEnabled });
 
-  // --------------------------
-  // Gate: run only after Shiny is initialized
-  // --------------------------
-  function whenShinyReady(fn) {
-    Promise.resolve(window.Shiny?.initializedPromise)
-      .then(() => { try { fn(); } catch (e) { log.error('gated fn error:', e); } });
-  }
-
-  // --------------------------
+  // -------------------------------------------------
   // Safety: do not rewrite inside `.no-i18n`
   // If any mutation occurs there, re-bind Shiny safely.
-  // --------------------------
+  // -------------------------------------------------
   const noI18nObserver = new MutationObserver((mutations) => {
     for (const m of mutations) {
       const host = m.target.closest?.('.no-i18n');
@@ -54,9 +45,9 @@
     watchNoI18n();
   }
 
-  // --------------------------
+  // -------------------------------------------------
   // Busy state toggles for GC cards (optional)
-  // --------------------------
+  // -------------------------------------------------
   document.addEventListener('shiny:recalculating', function (ev) {
     const card = ev.target?.closest?.('.gc-card');
     if (card) { card.classList.add('busy'); card.setAttribute('aria-busy', 'true'); }
@@ -66,10 +57,10 @@
     if (card) { card.classList.remove('busy'); card.setAttribute('aria-busy', 'false'); }
   });
 
-  // --------------------------
+  // -------------------------------------------------
   // Register Shiny message handlers (after Shiny is ready)
-  // --------------------------
-  whenShinyReady(function () {
+  // -------------------------------------------------
+  Shiny.initializedPromise.then(() => {
     // Title
     Shiny.addCustomMessageHandler('set-title', function (msg) {
       try { document.title = msg; } catch (e) { log.warn('set-title error', e); }
@@ -110,45 +101,12 @@
         el.dispatchEvent(new Event('input', { bubbles: true }));
       } catch (e) { log.warn('numeric-blank error', e); }
     });
-
-    // ---- File input labels (LEAN) ----
-    // Only placeholder and accessibility; do NOT touch button children (icon-only is rendered in R)
-    Shiny.addCustomMessageHandler('updateFileInputLabels', function (message) {
-      try {
-        if (!message?.id) return;
-        const hiddenInput = document.getElementById(message.id);
-        if (!hiddenInput) return;
-
-        // The visible controls live in the nearest .input-group
-        const container = hiddenInput.closest('.input-group') || hiddenInput.parentElement;
-        if (!container) return;
-
-        // Placeholder on the readonly text input (filename box)
-        const textInput = container.querySelector('input.form-control[readonly]');
-        if (textInput && typeof message.placeholder === 'string') {
-          textInput.setAttribute('placeholder', message.placeholder);
-          textInput.value = '';
-          textInput.setAttribute('aria-label', message.placeholder);
-        }
-
-        // Accessibility on the file input itself
-        if (typeof message.buttonLabel === 'string') {
-          hiddenInput.setAttribute('title', message.buttonLabel);
-          hiddenInput.setAttribute('aria-label', message.buttonLabel);
-        }
-
-        if (window.Shiny?.bindAll) Shiny.bindAll(container);
-        log.debug('updateFileInputLabels (lean) applied', { id: message.id });
-      } catch (e) {
-        log.warn('updateFileInputLabels handler error', e);
-      }
-    });
   });
 
-  // --------------------------
+  // -------------------------------------------------
   // Time zone helpers
-  // --------------------------
-  whenShinyReady(function () {
+  // -------------------------------------------------
+  Shiny.initializedPromise.then(() => {
     // A) Push browser IANA zone once Shiny is ready
     try {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -175,10 +133,8 @@
   (function () {
     let lastLat = null, lastLon = null;
     const isFiniteNum = (x) => typeof x === 'number' && isFinite(x);
-
     document.addEventListener('shiny:inputchanged', function (ev) {
       if (!ev?.name) return;
-
       if (/-manual_lat$/.test(ev.name)) {
         lastLat = (typeof ev.value === 'number') ? ev.value : Number(ev.value);
       } else if (/-manual_lon$/.test(ev.name)) {
@@ -186,7 +142,6 @@
       } else {
         return;
       }
-
       if (isFiniteNum(lastLat) && isFiniteNum(lastLon)) {
         try {
           const tz = (typeof tzlookup === 'function') ? tzlookup(lastLat, lastLon) : null;
@@ -210,9 +165,8 @@
         if (latEl && lonEl) {
           const lat = Number(latEl.value);
           const lon = Number(lonEl.value);
-          const ok  = isFinite(lat) && isFinite(lon);
+          const ok = isFinite(lat) && isFinite(lon);
           const key = ok ? lat.toFixed(6) + '/' + lon.toFixed(6) : null;
-
           if (ok && key !== lastKey) {
             try {
               const tz = (typeof tzlookup === 'function') ? tzlookup(lat, lon) : null;
@@ -231,108 +185,106 @@
     }
 
     // Start the poller only once Shiny is ready (avoid early setInputValue errors)
-    whenShinyReady(() => startLatLonPoller(6, 250));
+    Shiny.initializedPromise.then(() => startLatLonPoller(6, 250));
   })();
 
-  // --------------------------
+  // -------------------------------------------------
   // Plotly meta helpers (optional; keep if you read layout/traces in R)
-  // --------------------------
-  whenShinyReady(function () {
-    
-  function getGraphDiv(host) {
-    if (!host) return null;
-    // Sometimes the host itself is the GraphDiv (R htmlwidget sets classes on it)
-    if (host.classList.contains('js-plotly-plot') || host.layout || host.data) return host;
-    return host.querySelector('.js-plotly-plot, .plotly');
-  }
-
-  // --- push meta from a GraphDiv (gd) ---
-  function pushMetaFromGraphDiv(id, gd) {
-    const hasLayout = !!(gd && gd.layout);
-    const hasData   = !!(gd && gd.data && Array.isArray(gd.data));
-    log.info('pushMetaFromGraphDiv: state', { id, hasLayout, hasData });
-
-    if (hasLayout) {
-      Shiny.setInputValue(id + '_layout', gd.layout, { priority: 'event' });
-      log.info('pushPlotlyMeta: layout pushed', { id });
+  // -------------------------------------------------
+  Shiny.initializedPromise.then(() => {
+    function getGraphDiv(host) {
+      if (!host) return null;
+      // Sometimes the host itself is the GraphDiv (R htmlwidget sets classes on it)
+      if (host.classList.contains('js-plotly-plot') || host.layout || host.data) return host;
+      return host.querySelector('.js-plotly-plot, .plotly');
     }
-    if (hasData) {
-      const meta = { indices: [], id: [], srcType: [], yaxis: [], showlegend: [] };
-      for (let i = 0; i < gd.data.length; i++) {
-        const tr = gd.data[i];
-        meta.indices.push(i);
-        const cd0 = (tr.customdata && tr.customdata[0]) ? tr.customdata[0] : null; // list-of-lists [seriesLabel, stationId]
-        meta.id.push(cd0 ? cd0[1] : null);
-        meta.srcType.push((tr.line && tr.line.dash === 'dash') ? 'fwi87' : 'fwi25');
-        meta.yaxis.push(tr.yaxis || 'y');
-        meta.showlegend.push(!!tr.showlegend);
+
+    // --- push meta from a GraphDiv (gd) ---
+    function pushMetaFromGraphDiv(id, gd) {
+      const hasLayout = !!(gd && gd.layout);
+      const hasData = !!(gd && gd.data && Array.isArray(gd.data));
+      log.info('pushMetaFromGraphDiv: state', { id, hasLayout, hasData });
+
+      if (hasLayout) {
+        Shiny.setInputValue(id + '_layout', gd.layout, { priority: 'event' });
+        log.info('pushPlotlyMeta: layout pushed', { id });
       }
-      Shiny.setInputValue(id + '_traces', meta, { priority: 'event' });
-      log.info('pushPlotlyMeta: traces pushed', { id, count: meta.indices.length });
-    }
-  }
-
-  // --- wait until GraphDiv exists, then push meta after first render ---
-  function pushMetaWhenGraphReady(id, timeoutMs = 10000) {
-    const host = document.getElementById(id);
-    if (!host) { log.warn('pushMetaWhenGraphReady: host not found', { id }); return; }
-
-    let gd = getGraphDiv(host);
-    // If already ready, push immediately
-    if (gd && gd.layout && gd.data) {
-      log.info('pushMetaWhenGraphReady: gd ready immediately', { id });
-      pushMetaFromGraphDiv(id, gd);
-      return;
-    }
-
-    // Watch for GraphDiv to appear
-    const obs = new MutationObserver(() => {
-      gd = getGraphDiv(host);
-      if (gd && gd.addEventListener) {
-        obs.disconnect();
-        log.info('pushMetaWhenGraphReady: GraphDiv detected', { id });
-        gd.addEventListener('plotly_afterplot', () => {
-          log.info('pushMetaWhenGraphReady: afterplot fired', { id });
-          pushMetaFromGraphDiv(id, gd);
-        }, { once: true });
+      if (hasData) {
+        const meta = { indices: [], id: [], srcType: [], yaxis: [], showlegend: [] };
+        for (let i = 0; i < gd.data.length; i++) {
+          const tr = gd.data[i];
+          meta.indices.push(i);
+          const cd0 = (tr.customdata && tr.customdata[0]) ? tr.customdata[0] : null; // list-of-lists [seriesLabel, stationId]
+          meta.id.push(cd0 ? cd0[1] : null);
+          meta.srcType.push((tr.line && tr.line.dash === 'dash') ? 'fwi87' : 'fwi25');
+          meta.yaxis.push(tr.yaxis || 'y');
+          meta.showlegend.push(!!tr.showlegend);
+        }
+        Shiny.setInputValue(id + '_traces', meta, { priority: 'event' });
+        log.info('pushPlotlyMeta: traces pushed', { id, count: meta.indices.length });
       }
-    });
-    obs.observe(host, { childList: true, subtree: true });
+    }
 
-    // Safety timeout
-    setTimeout(() => { try { obs.disconnect(); } catch(e){} }, timeoutMs);
-  }
+    // --- wait until GraphDiv exists, then push meta after first render ---
+    function pushMetaWhenGraphReady(id, timeoutMs = 10000) {
+      const host = document.getElementById(id);
+      if (!host) { log.warn('pushMetaWhenGraphReady: host not found', { id }); return; }
+      let gd = getGraphDiv(host);
 
-  // --- robust handler registration ---
-  function registerHandlers() {
-    if (!window.Shiny || typeof Shiny.addCustomMessageHandler !== 'function') return false;
-    if (!Shiny.customMessageHandlers) { Shiny.customMessageHandlers = {}; log.info('Created Shiny.customMessageHandlers'); }
+      // If already ready, push immediately
+      if (gd && gd.layout && gd.data) {
+        log.info('pushMetaWhenGraphReady: gd ready immediately', { id });
+        pushMetaFromGraphDiv(id, gd);
+        return;
+      }
 
-    log.info('Registering custom message handlers');
-    Shiny.addCustomMessageHandler('getPlotlyLayout',  (m) => { if (m?.id) { log.info('getPlotlyLayout received',  { id: m.id }); pushMetaWhenGraphReady(m.id); } });
-    Shiny.addCustomMessageHandler('getPlotlyTraces',  (m) => { if (m?.id) { log.info('getPlotlyTraces received',  { id: m.id }); pushMetaWhenGraphReady(m.id); } });
-    return true;
-  }
+      // Watch for GraphDiv to appear
+      const obs = new MutationObserver(() => {
+        gd = getGraphDiv(host);
+        if (gd && gd.addEventListener) {
+          obs.disconnect();
+          log.info('pushMetaWhenGraphReady: GraphDiv detected', { id });
+          gd.addEventListener('plotly_afterplot', () => {
+            log.info('pushMetaWhenGraphReady: afterplot fired', { id });
+            pushMetaFromGraphDiv(id, gd);
+          }, { once: true });
+        }
+      });
+      obs.observe(host, { childList: true, subtree: true });
 
-  if (!registerHandlers()) {
-    log.info('Shiny not ready; deferring handler registration');
-    document.addEventListener('shiny:connected', () => { log.info('shiny:connected -> registering'); registerHandlers(); }, { once: true });
-    let attempts = 0;
-    const t = setInterval(() => { attempts++; if (registerHandlers() || attempts >= 20) clearInterval(t); }, 250);
-  }
+      // Safety timeout
+      setTimeout(() => { try { obs.disconnect(); } catch (e) { /* noop */ } }, timeoutMs);
+    }
 
-  // --------------------------
+    // --- robust handler registration ---
+    function registerHandlers() {
+      if (!window.Shiny || typeof Shiny.addCustomMessageHandler !== 'function') return false;
+      if (!Shiny.customMessageHandlers) { Shiny.customMessageHandlers = {}; log.info('Created Shiny.customMessageHandlers'); }
+      log.info('Registering custom message handlers');
+      Shiny.addCustomMessageHandler('getPlotlyLayout', (m) => { if (m?.id) { log.info('getPlotlyLayout received', { id: m.id }); pushMetaWhenGraphReady(m.id); } });
+      Shiny.addCustomMessageHandler('getPlotlyTraces', (m) => { if (m?.id) { log.info('getPlotlyTraces received', { id: m.id }); pushMetaWhenGraphReady(m.id); } });
+      return true;
+    }
+
+    if (!registerHandlers()) {
+      log.info('Shiny not ready; deferring handler registration');
+      document.addEventListener('shiny:connected', () => { log.info('shiny:connected -> registering'); registerHandlers(); }, { once: true });
+      let attempts = 0;
+      const t = setInterval(() => { attempts++; if (registerHandlers() || attempts >= 20) clearInterval(t); }, 250);
+    }
+  });
+
+  // -------------------------------------------------
   // Minimal instrumentation
-   // --------------------------
+  // -------------------------------------------------
   document.addEventListener('DOMContentLoaded', () => { log.info('DOMContentLoaded'); });
   Promise.resolve(window.Shiny?.initializedPromise).then(() => { log.info('Shiny.initializedPromise resolved'); });
-
   log.info('Bootstrap complete');
+
 })();
 
-
 // app-init.js (append)
-/* Viewport height fix: sets CSS --vh-page to the real innerHeight (mobile-friendly) */
+// Viewport height fix: sets CSS --vh-page to the real innerHeight (mobile-friendly)
 (function () {
   function setViewportVars() {
     const vh = window.innerHeight * 0.01;
@@ -344,5 +296,4 @@
   window.addEventListener('resize', setViewportVars, { passive: true });
   window.addEventListener('orientationchange', setViewportVars);
   setViewportVars();
-})();
 })();

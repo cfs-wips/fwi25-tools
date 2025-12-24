@@ -1,68 +1,57 @@
-library(data.table)
-library(lubridate)
-
-source("ng/NG_FWI.r")
-source("ng/util.r")
-
-
 smooth_5pt <- function(source) {
-  #binomial smoother  ... specifically for the 24 hour day
-  #1pt = 1
-  #3pt = (1 2 1) = 4
-  #5pt = (1 4 6 4 1) = 16
-  #7pt = (1 6 15 20 15 6 1) = 64
-  
-  cap <- length(source) #normally 24 edge cases on data set input though
-  
+  # binomial smoother  ... specifically for the 24 hour day
+  # 1pt = 1
+  # 3pt = (1 2 1) = 4
+  # 5pt = (1 4 6 4 1) = 16
+  # 7pt = (1 6 15 20 15 6 1) = 64
+
+  cap <- length(source) # normally 24 edge cases on data set input though
+
   dest <- numeric(cap)
-  
+
   dest[1] <- source[1]
   dest[cap] <- source[cap]
-  
+
   miss <- 0
-  for (i in 1:3){
-    if (source[i] < -90.0){
+  for (i in 1:3) {
+    if (source[i] < -90.0) {
       miss <- miss + 1
     }
   }
-  if (miss == 0){
+  if (miss == 0) {
     dest[2] <- (0.25 * source[1]) + (0.5 * source[2]) + (0.25 * source[3])
-  }
-  else {
+  } else {
     dest[2] <- source[2]
   }
-  
-  
-  for (i in 3:(cap-2)){
+
+
+  for (i in 3:(cap - 2)) {
     miss <- 0
-    for (j in (i-2):(i+2)){
-      
-      if (source[j] < -90.0){
+    for (j in (i - 2):(i + 2)) {
+      if (source[j] < -90.0) {
         miss <- miss + 1
       }
     }
-    if (miss == 0){
-      dest[i] <- (1.0/16.0 * source[i - 2]) + (4.0/16.0 * source[i - 1]) + (6.0/16.0 * source[i]) + (4.0/16.0 * source[i + 1]) + (1.0/16.0 * source[i + 2])
-    }
-    else {
+    if (miss == 0) {
+      dest[i] <- (1.0 / 16.0 * source[i - 2]) + (4.0 / 16.0 * source[i - 1]) + (6.0 / 16.0 * source[i]) + (4.0 / 16.0 * source[i + 1]) + (1.0 / 16.0 * source[i + 2])
+    } else {
       dest[i] <- source[i]
     }
   }
-  
-  
-  miss <- 0 
-  for (i in (cap-2):cap){
-    if (source[i] < -90.0){
+
+
+  miss <- 0
+  for (i in (cap - 2):cap) {
+    if (source[i] < -90.0) {
       miss <- miss + 1
     }
   }
-  if (miss == 0){
+  if (miss == 0) {
     dest[cap - 1] <- (0.25 * source[cap - 2]) + (0.5 * source[cap - 1]) + (0.25 * source[cap])
-  }
-  else {
+  } else {
     dest[cap - 1] <- source[cap - 1]
   }
-  
+
   return(dest)
 }
 
@@ -81,7 +70,7 @@ pseudo_date <- function(yr, mon, day, hr, reset_hr = 5) {
     adjusted_jd <- julian(mon, day)
   }
 
-  if (adjusted_jd == 0) {  # where Jan 1 shifts to 0, bump it to end of previous year
+  if (adjusted_jd == 0) { # where Jan 1 shifts to 0, bump it to end of previous year
     adjusted_jd <- julian(12, 31)
     adjusted_yr <- yr - 1
   } else {
@@ -98,8 +87,10 @@ pseudo_date <- function(yr, mon, day, hr, reset_hr = 5) {
 #' @param     silent        suppresses informative print statements (default False)
 #' @param     round_out     decimals to truncate output to, NA for none (default 4)
 #' @return                  daily summary of peak FWI conditions
-generate_daily_summaries <- function(hourly_FWI, reset_hr = 5,
-  silent = FALSE, round_out = 4) {
+generate_daily_summaries <- function(
+  hourly_FWI, reset_hr = 5,
+  silent = FALSE, round_out = 4
+) {
   wasDf <- is.data.frame(hourly_FWI)
   hourly_data <- copy(hourly_FWI)
   if (wasDf) {
@@ -145,7 +136,7 @@ generate_daily_summaries <- function(hourly_FWI, reset_hr = 5,
 
       max_ffmc <- by_date[, max(ffmc)]
       if (max_ffmc < 85.0) {
-        peak_time <- 13  # 12 hours into pseudo-date
+        peak_time <- 13 # 12 hours into pseudo-date
       } else {
         peak_time <- by_date[, which.max(isi_smooth)]
       }
@@ -163,7 +154,8 @@ generate_daily_summaries <- function(hourly_FWI, reset_hr = 5,
       ss <- by_date[peak_time, sunset]
 
       # find the rest of the values at peak
-      daily_report <- data.table(id = by_date[1, id],
+      daily_report <- data.table(
+        id = by_date[1, id],
         yr = by_date[1, yr],
         mon = by_date[1, mon],
         day = by_date[1, day],
@@ -183,8 +175,11 @@ generate_daily_summaries <- function(hourly_FWI, reset_hr = 5,
         gfwi = by_date[peak_time, gfwi],
         ws_smooth = by_date[peak_time, ws_smooth],
         isi_smooth = by_date[peak_time, isi_smooth],
-        gsi_smooth = by_date[peak_time,
-          grass_spread_index(ws_smooth, mcgfmc, percent_cured, standing)])
+        gsi_smooth = by_date[
+          peak_time,
+          grass_spread_index(ws_smooth, mcgfmc, percent_cured, standing)
+        ]
+      )
 
       results <- rbind(results, daily_report)
     }
@@ -196,8 +191,10 @@ generate_daily_summaries <- function(hourly_FWI, reset_hr = 5,
 
   # format decimal places of output columns
   if (!(is.na(round_out) || round_out == "NA")) {
-    outcols <- c("ffmc", "dmc", "dc", "isi", "bui", "fwi", "dsr",
-      "gfmc", "gsi", "gfwi", "ws_smooth", "isi_smooth", "gsi_smooth")
+    outcols <- c(
+      "ffmc", "dmc", "dc", "isi", "bui", "fwi", "dsr",
+      "gfmc", "gsi", "gfwi", "ws_smooth", "isi_smooth", "gsi_smooth"
+    )
     set(results, j = outcols, value = round(results[, ..outcols], as.integer(round_out)))
   }
 
@@ -218,12 +215,21 @@ if ("--args" %in% commandArgs() && sys.nframe() == 0) {
   input <- args[1]
   output <- args[2]
   # load optional arguments if provided, or set to default
-  if (length(args) >= 3) reset_hr <- as.integer(args[3])
-  else reset_hr <- 5
-  if (length(args) >= 4) silent <- as.logical(args[4])
-  else silent <- FALSE
-  if (length(args) >= 5) round_out <- args[5]
-  else round_out <- 4
+  if (length(args) >= 3) {
+    reset_hr <- as.integer(args[3])
+  } else {
+    reset_hr <- 5
+  }
+  if (length(args) >= 4) {
+    silent <- as.logical(args[4])
+  } else {
+    silent <- FALSE
+  }
+  if (length(args) >= 5) {
+    round_out <- args[5]
+  } else {
+    round_out <- 4
+  }
   if (length(args) >= 6) warning("Too many input arguments provided, some unused")
 
   df_in <- read.csv(input)

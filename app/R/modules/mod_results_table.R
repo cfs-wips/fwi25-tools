@@ -332,7 +332,7 @@ mod_results_table_server <- function(id, tr, dt_i18n, results, tz_reactive,
         ts_utc = if ("timestamp" %in% names(df) && inherits(df$timestamp, "POSIXt")) df$timestamp else NA
       )
       out
-    }) |> bindCache(results(), tz_reactive(), ignore_dst_reactive())
+    })
 
     # ---- Render DT ----
     output$tbl <- DT::renderDT(

@@ -1,16 +1,3 @@
-downloadButton_sl <- function(...) {
-  tag <- shiny::downloadButton(...)
-  tag$attribs$download <- NULL
-  tag
-}
-downloadLink_sl <- function(...) {
-  tag <- shiny::downloadLink(...)
-  tag$attribs$download <- NULL
-  tag
-}
-
-
-# ui.R (patch)
 ui <- fluidPage(
   theme = bslib::bs_theme(),
   title = NULL,

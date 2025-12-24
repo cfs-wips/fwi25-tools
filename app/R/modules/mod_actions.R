@@ -22,7 +22,16 @@ mod_actions_ui <- function(id) {
     )
   )
 }
-
+downloadButton_sl <- function(...) {
+  tag <- shiny::downloadButton(...)
+  tag$attribs$download <- NULL
+  tag
+}
+downloadLink_sl <- function(...) {
+  tag <- shiny::downloadLink(...)
+  tag$attribs$download <- NULL
+  tag
+}
 `%||%` <- function(a, b) if (is.null(a) || length(a) == 0L) b else a
 
 #' @param tr translator function (from mod_i18n_server()$tr)
@@ -30,7 +39,15 @@ mod_actions_ui <- function(id) {
 #' @param csv_name reactive() used to build a friendly filename
 mod_actions_server <- function(id, tr, results, csv_name) {
   moduleServer(id, function(input, output, session) {
-    
+    `%||%` <- function(a, b) if (is.null(a) || length(a) == 0L) b else a
+    safe_tr <- function(key) {
+      tryCatch(tr(key), error = function(e) {
+        warning(sprintf("tr('%s') failed: %s", key, e$message))
+        key # fallback label
+      })
+    }
+
+
     # --- Run button ---
     output$run_ui <- renderUI(
       actionButton(
@@ -40,19 +57,22 @@ mod_actions_server <- function(id, tr, results, csv_name) {
         `aria-label` = tr("aria_run_label")
       )
     )
-    
+
     # --- Download button ---
-    output$dl_ui <- renderUI(
-      downloadButton_sl(session$ns("dl"), tr("download_results"))
-    )
-    
+
+    output$dl_ui <- renderUI({
+      btn_fn <- get0("downloadButton_sl", inherits = TRUE) %||% shiny::downloadButton
+      btn_fn(session$ns("dl"), safe_tr("download_results"))
+    })
+
+
     safe_fwrite <- function(x, file) {
       tryCatch(
         data.table::fwrite(x, file),
         error = function(e) utils::write.csv(x, file, row.names = FALSE)
       )
     }
-    
+
     output$dl <- downloadHandler(
       filename = function() {
         sprintf(
@@ -66,7 +86,7 @@ mod_actions_server <- function(id, tr, results, csv_name) {
       },
       contentType = "text/csv"
     )
-    
+
     # --- Help modal ---
     observeEvent(input$help, {
       showModal(
@@ -79,7 +99,7 @@ mod_actions_server <- function(id, tr, results, csv_name) {
         )
       )
     })
-    
+
     # Return the run click as before
     return(list(run = reactive(input$run)))
   })

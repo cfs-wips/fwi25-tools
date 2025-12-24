@@ -7,12 +7,12 @@ library(data.table)
 #'
 #' @param data          data to check
 #' @return              whether each entry in data is 1 unit from the next entry
-is_sequential <- function(data, units) {
+is_sequential_v <- function(data, units) {
   v <- na.omit(unique(difftime(data, data.table::shift(data, 1), units = units)))
   return(length(data) == 1 || (1 == v[[1]] && length(v) == 1))
 }
 
-is_sequential_days <- function(df) {
+is_sequential_days_v <- function(df) {
   # data <- copy(df)
   # colnames(data) <- tolower(colnames(data))
   return(is_sequential(as.Date(df$date), "days"))
@@ -22,27 +22,27 @@ is_sequential_days <- function(df) {
 #'
 #' @param df            data to check
 #' @return              whether each entry is 1 hour from the next entry
-is_sequential_hours <- function(df) {
+is_sequential_hours_v <- function(df) {
   # data <- copy(df)
   # colnames(data) <- tolower(colnames(data))
   return(is_sequential(as.POSIXct(df$timestamp), "hours"))
 }
 
 # Specific humidity (g/kg)
-find_q <- function(temp, rh) {
+find_q_v <- function(temp, rh) {
   svp <- 6.108 * exp(17.27 * temp / (temp + 237.3))
   vp <- svp * rh / 100.0
   217 * vp / (273.17 + temp)
 }
 
 # Relative humidity from specific humidity
-find_rh <- function(q, temp) {
+find_rh_v <- function(q, temp) {
   cur_vp <- (273.17 + temp) * q / 217
   100 * cur_vp / (6.108 * exp(17.27 * temp / (temp + 237.3)))
 }
 
 # Day-of-year (no leap year handling)
-julian <- function(mon, day) {
+julian_v <- function(mon, day) {
   month <- c(0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365)
   month[as.integer(mon)] + as.integer(day)
 }
@@ -107,7 +107,7 @@ get_sunlight_v <- function(dt, get_solrad = FALSE) {
 }
 
 # Seasonal curing (vectorized)
-seasonal_curing <- function(julian_date) {
+seasonal_curing_v <- function(julian_date) {
   PERCENT_CURED <- c(
     96.0, 96.0, 96.0, 96.0, 96.0, 96.0, 96.0, 96.0, 95.0, 93.0,
     92.0, 90.5, 88.4, 84.4, 78.1, 68.7, 50.3, 32.9, 23.0, 22.0,

@@ -411,7 +411,7 @@ hFWI <- function(
     wx[, timestamp := as.POSIXct(ts_str, tz = "UTC")]
   }
   if (!("grass_fuel_load" %in% og_names)) wx$grass_fuel_load <- DEFAULT_GRASS_FUEL_LOAD
-  if (!("percent_cured" %in% og_names)) wx$percent_cured <- seasonal_curing(julian(wx$mon, wx$day))
+  if (!("percent_cured" %in% og_names)) wx$percent_cured <- seasonal_curing_v(julian(wx$mon, wx$day))
 
   # Range checks (as in original)
   if (is.character(wx$timezone)) stop("UTC offset (timezone) should be numeric")

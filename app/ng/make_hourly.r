@@ -1,7 +1,4 @@
 # convert min/max weather format into hourly format
-library(data.table)
-library(lubridate)
-source("ng/util.r")
 
 C_TEMP <- list(c_alpha = 0.0, c_beta = 2.75, c_gamma = -1.9)
 C_RH <- list(c_alpha = 0.25, c_beta = 2.75, c_gamma = -2.0)

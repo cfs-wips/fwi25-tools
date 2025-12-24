@@ -337,7 +337,7 @@ mod_plot_server <- function(
       }
       attr(df, "dt_col") <- dt_col
       df
-    }) |> bindCache(input$plot_dataset, shaped_input(), results())
+    })
 
     # ---- Populate Y choices ----
     preferred_for <- function(dataset_key) {
@@ -563,7 +563,7 @@ mod_plot_server <- function(
 
 
       sp
-    }) |> bindCache(data_for_plot(), input$plot_y_multi, input$facet_ncol, input$facet_free_y, lang())
+    })
 
     # ---- Proxy updates for language (no redraw) ----
     # observeEvent(list(lang()), # tab_active()),

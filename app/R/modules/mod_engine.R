@@ -26,17 +26,7 @@ mod_engine_server <- function(
 ) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
-
-    # ---- Dependencies ----
-    # source("ng/util.r", local = TRUE)
-    # source("ng/NG_FWI.r", local = TRUE)
-    # # source("ng/make_inputs.r", local = TRUE)
-    source("ng/util_vectorized.r", local = TRUE)
-    source("ng/NG_FWI_vectorized.r", local = TRUE)
-
-
     session$onFlushed(function() {
-      # compiler::enableJIT(3)
       # Warm-start daily FWI path with a synthetic 1-row dataset
       try(
         {
@@ -276,17 +266,7 @@ mod_engine_server <- function(
         tz    = tz$tz_use() %||% "UTC",
         start = filt$start_date()
       )
-    }) |> bindCache(
-      reactive({
-        rh <- raw_hourly()
-        list(
-          dims = if (is.null(rh)) NULL else list(rows = nrow(rh), cols = ncol(rh)),
-          tz = tz$tz_use(),
-          start = filt$start_date()
-        )
-      }),
-      cache = cache
-    )
+    })
 
     # ---- SHAPED INPUT (runs ONLY when run_click fires) ----
     shaped_input_core <- reactive({
@@ -478,28 +458,6 @@ mod_engine_server <- function(
 
     # Cache keys for shaping
     shaped_input_tmp <- shaped_input_core
-    if (isTRUE(enable_cache)) {
-      shaped_input_tmp <- shiny::bindCache(
-        shaped_input_tmp,
-        reactive({
-          rh <- raw_hourly()
-          list(
-            rh = if (is.null(rh)) NULL else list(rows = nrow(rh), cols = ncol(rh)),
-            map = list(
-              dt = mapping$col_datetime(), yr = mapping$col_year(), mon = mapping$col_month(),
-              day = mapping$col_day(), hr = mapping$col_hour(),
-              date = mapping$col_date(), time = mapping$col_time(), sol = mapping$col_solrad(),
-              t = mapping$col_temp(), rh = mapping$col_rh(), ws = mapping$col_ws(),
-              prec = mapping$col_rain(), id = mapping$col_id(),
-              lat = mapping$manual_lat(), lon = mapping$manual_lon()
-            ),
-            tz = list(use = tz$tz_use(), policy = tz$tz_offset_policy(), mode = tz$tz_mode()),
-            start = filt$start_date()
-          )
-        }),
-        cache = cache
-      )
-    }
     shaped_input <- shiny::bindEvent(shaped_input_tmp, run_click(), ignoreInit = TRUE)
 
     # ---- HOURLY MODEL (FWI25) ----
@@ -600,20 +558,7 @@ mod_engine_server <- function(
     })
 
     run_model_tmp <- run_model_core
-    if (isTRUE(enable_cache)) {
-      run_model_tmp <- shiny::bindCache(
-        run_model_tmp,
-        reactive({
-          si <- shaped_input()
-          list(
-            si = if (!is.null(si)) fast_fingerprint(si$inputs) else NULL,
-            tz_off = if (!is.null(si)) si$tz_offset else NULL,
-            ffmc = init$ffmc0(), dmc = init$dmc0(), dc = init$dc0()
-          )
-        }),
-        cache = cache
-      )
-    }
+
     run_model <- shiny::bindEvent(run_model_tmp, run_click(), ignoreInit = TRUE)
 
     # ---- DAILY (FWI87) ----
@@ -946,21 +891,7 @@ mod_engine_server <- function(
     })
 
     daily_fwi_tmp <- daily_fwi_core
-    if (isTRUE(enable_cache)) {
-      daily_fwi_tmp <- shiny::bindCache(
-        daily_fwi_tmp,
-        reactive({
-          si <- shaped_input()
-          list(
-            si = if (!is.null(si)) fast_fingerprint(si$inputs) else NULL,
-            ffmc = init$ffmc0(), dmc = init$dmc0(), dc = init$dc0(),
-            policy = tz$tz_offset_policy(), do87 = init$calc_fwi87(),
-            has_daily_src = !is.null(daily_src()) && nrow(daily_src()) > 0
-          )
-        }),
-        cache = cache
-      )
-    }
+
     daily_fwi_df <- shiny::bindEvent(daily_fwi_tmp, run_click(), ignoreInit = TRUE)
 
     # ---- Telemetry observers (Option 2 fix) ----

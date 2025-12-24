@@ -259,7 +259,7 @@ mod_fwi87_table_server <- function(id, tr, dt_i18n, df87, tz_reactive,
       )
 
       out
-    }) |> bindCache(df87(), tz_reactive(), ignore_dst_reactive())
+    })
 
     # ---- Render DT
     output$tbl <- DT::renderDT(
