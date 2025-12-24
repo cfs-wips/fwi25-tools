@@ -238,50 +238,88 @@
   // Plotly meta helpers (optional; keep if you read layout/traces in R)
   // --------------------------
   whenShinyReady(function () {
-    function pushPlotlyMeta(id, maxAttempts = 20, delayMs = 150) {
-      let n = 0;
-      function tryOnce() {
-        const host = document.getElementById(id);
-        if (!host) {
-          n++;
-          if (n <= maxAttempts) return setTimeout(tryOnce, delayMs);
-          return;
-        }
-        const target = (host && (host.layout || host.data)) ? host :
-                       (host.querySelector ? host.querySelector('.plotly') : null);
+    
+  function getGraphDiv(host) {
+    if (!host) return null;
+    // Sometimes the host itself is the GraphDiv (R htmlwidget sets classes on it)
+    if (host.classList.contains('js-plotly-plot') || host.layout || host.data) return host;
+    return host.querySelector('.js-plotly-plot, .plotly');
+  }
 
-        const hasLayout = !!(target && target.layout);
-        const hasData   = !!(target && target.data && Array.isArray(target.data));
+  // --- push meta from a GraphDiv (gd) ---
+  function pushMetaFromGraphDiv(id, gd) {
+    const hasLayout = !!(gd && gd.layout);
+    const hasData   = !!(gd && gd.data && Array.isArray(gd.data));
+    log.info('pushMetaFromGraphDiv: state', { id, hasLayout, hasData });
 
-        if (hasLayout)
-          Shiny.setInputValue(id + '_layout', target.layout, { priority: 'event' });
-
-        if (hasData) {
-          const meta = { indices: [], id: [], srcType: [], yaxis: [], showlegend: [] };
-          for (let i = 0; i < target.data.length; i++) {
-            const tr = target.data[i];
-            meta.indices.push(i);
-            const cd0 = (tr.customdata && tr.customdata[0]) ? tr.customdata[0] : null;
-            meta.id.push(cd0 ? cd0[1] : null);
-            meta.srcType.push((tr.line && tr.line.dash === 'dash') ? 'fwi87' : 'fwi25');
-            meta.yaxis.push(tr.yaxis || 'y');
-            meta.showlegend.push(!!tr.showlegend);
-          }
-          Shiny.setInputValue(id + '_traces', meta, { priority: 'event' });
-        }
-
-        if (!hasLayout || !hasData) {
-          n++;
-          if (n <= maxAttempts) setTimeout(tryOnce, delayMs);
-        }
+    if (hasLayout) {
+      Shiny.setInputValue(id + '_layout', gd.layout, { priority: 'event' });
+      log.info('pushPlotlyMeta: layout pushed', { id });
+    }
+    if (hasData) {
+      const meta = { indices: [], id: [], srcType: [], yaxis: [], showlegend: [] };
+      for (let i = 0; i < gd.data.length; i++) {
+        const tr = gd.data[i];
+        meta.indices.push(i);
+        const cd0 = (tr.customdata && tr.customdata[0]) ? tr.customdata[0] : null; // list-of-lists [seriesLabel, stationId]
+        meta.id.push(cd0 ? cd0[1] : null);
+        meta.srcType.push((tr.line && tr.line.dash === 'dash') ? 'fwi87' : 'fwi25');
+        meta.yaxis.push(tr.yaxis || 'y');
+        meta.showlegend.push(!!tr.showlegend);
       }
-      tryOnce();
+      Shiny.setInputValue(id + '_traces', meta, { priority: 'event' });
+      log.info('pushPlotlyMeta: traces pushed', { id, count: meta.indices.length });
+    }
+  }
+
+  // --- wait until GraphDiv exists, then push meta after first render ---
+  function pushMetaWhenGraphReady(id, timeoutMs = 10000) {
+    const host = document.getElementById(id);
+    if (!host) { log.warn('pushMetaWhenGraphReady: host not found', { id }); return; }
+
+    let gd = getGraphDiv(host);
+    // If already ready, push immediately
+    if (gd && gd.layout && gd.data) {
+      log.info('pushMetaWhenGraphReady: gd ready immediately', { id });
+      pushMetaFromGraphDiv(id, gd);
+      return;
     }
 
-    Shiny.addCustomMessageHandler('getPlotlyLayout', (m) => { if (m?.id) pushPlotlyMeta(m.id); });
-    Shiny.addCustomMessageHandler('getPlotlyTraces', (m) => { if (m?.id) pushPlotlyMeta(m.id); });
-  });
-  
+    // Watch for GraphDiv to appear
+    const obs = new MutationObserver(() => {
+      gd = getGraphDiv(host);
+      if (gd && gd.addEventListener) {
+        obs.disconnect();
+        log.info('pushMetaWhenGraphReady: GraphDiv detected', { id });
+        gd.addEventListener('plotly_afterplot', () => {
+          log.info('pushMetaWhenGraphReady: afterplot fired', { id });
+          pushMetaFromGraphDiv(id, gd);
+        }, { once: true });
+      }
+    });
+    obs.observe(host, { childList: true, subtree: true });
+
+    // Safety timeout
+    setTimeout(() => { try { obs.disconnect(); } catch(e){} }, timeoutMs);
+  }
+
+  // --- robust handler registration ---
+  function registerHandlers() {
+    if (!window.Shiny || typeof Shiny.addCustomMessageHandler !== 'function') return false;
+    if (!Shiny.customMessageHandlers) { Shiny.customMessageHandlers = {}; log.info('Created Shiny.customMessageHandlers'); }
+
+    log.info('Registering custom message handlers');
+    Shiny.addCustomMessageHandler('getPlotlyLayout',  (m) => { if (m?.id) { log.info('getPlotlyLayout received',  { id: m.id }); pushMetaWhenGraphReady(m.id); } });
+    Shiny.addCustomMessageHandler('getPlotlyTraces',  (m) => { if (m?.id) { log.info('getPlotlyTraces received',  { id: m.id }); pushMetaWhenGraphReady(m.id); } });
+    return true;
+  }
+
+  if (!registerHandlers()) {
+    log.info('Shiny not ready; deferring handler registration');
+    document.addEventListener('shiny:connected', () => { log.info('shiny:connected -> registering'); registerHandlers(); }, { once: true });
+    let attempts = 0;
+    const t = setInterval(() => { attempts++; if (registerHandlers() || attempts >= 20) clearInterval(t); }, 250);
+  }
 
   // --------------------------
   // Minimal instrumentation
@@ -306,4 +344,5 @@
   window.addEventListener('resize', setViewportVars, { passive: true });
   window.addEventListener('orientationchange', setViewportVars);
   setViewportVars();
+})();
 })();

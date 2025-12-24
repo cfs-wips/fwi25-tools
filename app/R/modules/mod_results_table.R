@@ -73,7 +73,7 @@ mod_results_table_server <- function(id, tr, dt_i18n, results, tz_reactive,
 
 
     output$title <- renderUI({
-      h4(i18n_or("fwi25_results_title", "FWI25 results"))
+      h5(i18n_or("fwi25_results_title", "FWI25 results"))
     })
     outputOptions(output, "title", suspendWhenHidden = FALSE)
     output$hint <- renderUI({
