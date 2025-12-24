@@ -157,8 +157,43 @@ mod_prepare_server <- function(
       }
       all(diff(d) == 1)
     }
+
+    is_blank <- function(x) {
+      if (is.null(x)) {
+        return(TRUE)
+      }
+      if (is.character(x)) {
+        return(!nzchar(trimws(x)) | is.na(x))
+      }
+      is.na(x)
+    }
+
     safe_setorder <- function(dt, id_name) {
-      if (!is.null(id_name) && id_name %in% names(dt)) data.table::setorderv(dt, c(id_name, "timestamp")) else data.table::setorderv(dt, "timestamp")
+      if (!is.null(id_name) && id_name %in% names(dt)) data.table::setorderv(dt, c("timestamp", id_name)) else data.table::setorderv(dt, "timestamp")
+    }
+
+    fix_single_blank_id <- function(dt) {
+      data.table::setDT(dt)
+      if (!("id" %in% names(dt))) {
+        return(dt[])
+      }
+      # Normalize to character and trim
+      cur <- trimws(as.character(dt[["id"]]))
+      ids <- unique(cur)
+      # Identify blank & NA
+      is_blank_id <- function(x) !nzchar(x) | is.na(x)
+      blank_mask <- is_blank_id(ids)
+
+      if (length(ids) == 2 && sum(blank_mask) == 1) {
+        # One blank and one real → make all blanks equal to the real id
+        real_id <- ids[!blank_mask][1]
+        dt[is_blank_id(cur), id := real_id]
+      } else if (length(ids) == 2 && "STN" %in% ids) {
+        # Only "STN" and a real id → prefer the real id
+        real_id <- setdiff(ids, "STN")[1]
+        dt[is_blank_id(cur) | cur == "STN", id := real_id]
+      }
+      dt[]
     }
 
     normalize_types_hourly <- function(dt, cols) {
@@ -287,7 +322,25 @@ mod_prepare_server <- function(
         val <- suppressWarnings(cast(val))
         data.table::set(dt, j = target, value = val)
       }
-      map_copy(mapping$col_id, "id", as.character)
+
+      nm <- tryCatch(mapping$col_id(), error = function(e) NULL)
+      if (!is.null(nm) && nzchar(nm) && nm %in% names(dt)) {
+        src <- trimws(as.character(dt[[nm]]))
+        if ("id" %in% names(dt)) {
+          cur <- as.character(dt[["id"]])
+          data.table::set(
+            dt,
+            j = "id",
+            value = ifelse(nzchar(src), src, ifelse(nzchar(cur), cur, "STN"))
+          )
+        } else {
+          data.table::set(
+            dt,
+            j = "id",
+            value = ifelse(nzchar(src), src, "STN")
+          )
+        }
+      }
       # meteorology (numeric)
       map_copy(mapping$col_temp, "temp", as.numeric)
       map_copy(mapping$col_rh, "rh", as.numeric)
@@ -498,8 +551,29 @@ mod_prepare_server <- function(
 
       set_col(dt, "timestamp", ts_new)
       set_col(dt, "date", as.Date(dt$timestamp, tz = tz_string))
-      stn_list <- if (!is.null(cols$id) && cols$id %in% names(dt)) split(dt, dt[[cols$id]]) else list(STN = dt)
 
+
+      if (!is.null(cols$id) && cols$id %in% names(dt)) {
+        # Trim and find non-blank IDs
+        id_trim <- trimws(as.character(dt[[cols$id]]))
+        nonblank <- id_trim[nzchar(id_trim)]
+        if (length(nonblank)) {
+          # Use the most frequent non-blank id (mode) as canonical label
+          canon_id <- names(sort(table(nonblank), decreasing = TRUE))[1]
+        } else {
+          canon_id <- "STN"
+        }
+        # Fill blanks/NA with canonical id
+        data.table::set(dt,
+          j = cols$id,
+          value = ifelse(nzchar(id_trim), id_trim, canon_id)
+        )
+      } else {
+        # No id column at all → create one as "STN"
+        data.table::set(dt, j = "id", value = rep.int("STN", nrow(dt)))
+        cols$id <- "id"
+      }
+      stn_list <- split(dt, dt[[cols$id]])
       fill_one_station <- function(stn_dt, stn_id) {
         stn_dt <- dt_prepare_for_add(stn_dt)
         day_stats <- stn_dt[, .(
@@ -514,6 +588,22 @@ mod_prepare_server <- function(
           return(stn_dt[, date := NULL][])
         }
 
+        stn_id <- {
+          if ("id" %in% names(stn_dt)) {
+            ids <- trimws(as.character(stn_dt$id))
+            nb <- ids[nzchar(ids)]
+            if (length(nb)) nb[1] else "STN"
+          } else {
+            "STN"
+          }
+        }
+
+        if (!("id" %in% names(stn_dt))) {
+          stn_dt[, id := stn_id]
+        } else {
+          stn_dt[is_blank(id), id := stn_id]
+        }
+
         synth_list <- vector("list", length(need))
         for (i in seq_along(need)) {
           day_i <- need[i]
@@ -524,7 +614,7 @@ mod_prepare_server <- function(
         }
         syn_all <- data.table::rbindlist(synth_list, fill = TRUE)
         syn_all <- align_syn_to_stn_names(stn_dt, syn_all, cols)
-
+        syn_all[, id := stn_id]
         # Fallback: if ID/lat/lon missing in synthetic rows, backfill from station context
         if (!("id" %in% names(syn_all))) syn_all[, id := stn_id]
         if (!("lat" %in% names(syn_all))) {
@@ -569,7 +659,7 @@ mod_prepare_server <- function(
 
         # ensure ID is not NA on newly added rows
         if ("id" %in% names(stn_dt)) stn_dt[is.na(id), id := stn_id]
-
+        if ("id" %in% names(stn_dt)) stn_dt[is_blank(id), id := stn_id]
         # backfill NA core variables from syn_all where possible
         candidate_vars <- unique(na.omit(c(
           cols$temp, cols$rh, cols$ws, cols$prec,
@@ -598,6 +688,7 @@ mod_prepare_server <- function(
       # Simple dedup on final combined output
       out <- simple_dedup_by_key(out)
       safe_setorder(out, cols$id %||% NULL)
+      if ("id" %in% names(out)) out[!nzchar(trimws(as.character(id))) | is.na(id), id := "STN"]
       out[]
     }
 
@@ -683,8 +774,13 @@ mod_prepare_server <- function(
 
       if (!("id" %in% names(dt))) {
         data.table::set(dt, j = "id", value = rep.int("STN", nrow(dt)))
-      } else if (all(is.na(dt$id))) {
-        dt[, id := "STN"]
+        # } else if (all(is.na(dt$id))) {
+        #   dt[, id := "STN"]
+      } else {
+        dt[, id := {
+          ch <- trimws(as.character(id))
+          ifelse(nzchar(ch), ch, "STN")
+        }]
       }
 
       # --- NEW: Stamp manual lat/lon defaults (only if missing or all NA) --------
@@ -1090,10 +1186,11 @@ mod_prepare_server <- function(
         out_dt <- promote_canonical_vars(out_dt, cols_out)
         out_dt <- prune_to_canonical(out_dt)
         try(validate_canonical(out_dt), silent = TRUE)
-        out <- attach_provenance(out_dt, "hourly", "passthrough", tz_string, offset_policy, started_at, offset_hours = NA,start_date_used=args$start_date)
+        out <- attach_provenance(out_dt, "hourly", "passthrough", tz_string, offset_policy, started_at, offset_hours = NA, start_date_used = args$start_date)
         setorderv(out, "timestamp")
         # Simple dedup before publishing
         out <- simple_dedup_by_key(out)
+        out <- fix_single_blank_id(out) 
         raw_like_rv(out)
         daily_src_rv(NULL)
         finished_at <- Sys.time()
@@ -1201,10 +1298,11 @@ mod_prepare_server <- function(
               out <- promote_canonical_vars(out, cols_out)
               out <- prune_to_canonical(out)
               try(validate_canonical(out), silent = TRUE)
-              out <- attach_provenance(out, "hourly", paste0("replace_stream(dailyNoon→hourly:", dia, ")"), tz_string, offset_policy, started_at, start_date_used=args$start_date)
+              out <- attach_provenance(out, "hourly", paste0("replace_stream(dailyNoon→hourly:", dia, ")"), tz_string, offset_policy, started_at, start_date_used = args$start_date)
               setorderv(out, "timestamp")
               # Simple dedup before publishing
               out <- simple_dedup_by_key(out)
+              out <- fix_single_blank_id(out) 
               raw_like_rv(out)
 
               daily_src_rv(NULL)
@@ -1239,10 +1337,11 @@ mod_prepare_server <- function(
             out <- promote_canonical_vars(out, cols_out)
             out <- prune_to_canonical(out)
             try(validate_canonical(out), silent = TRUE)
-            out <- attach_provenance(out, "hourly", paste0("gapFill(daily→hourly:", dia, ")"), tz_string, offset_policy, started_at,start_date_used=args$start_date)
+            out <- attach_provenance(out, "hourly", paste0("gapFill(daily→hourly:", dia, ")"), tz_string, offset_policy, started_at, start_date_used = args$start_date)
             setorderv(out, "timestamp")
             # Simple dedup before publishing
             out <- simple_dedup_by_key(out)
+            out <- fix_single_blank_id(out) 
             raw_like_rv(out)
 
             daily_src_rv(NULL)
@@ -1296,10 +1395,11 @@ mod_prepare_server <- function(
         out <- promote_canonical_vars(out, cols_out)
         out <- prune_to_canonical(out)
         try(validate_canonical(out), silent = TRUE)
-        out <- attach_provenance(out, "daily_one_hour", paste0("daily→hourly(", dia, ")"), tz_string, offset_policy, started_at, offset_hours = res$tz_off,start_date_used=args$start_date)
+        out <- attach_provenance(out, "daily_one_hour", paste0("daily→hourly(", dia, ")"), tz_string, offset_policy, started_at, offset_hours = res$tz_off, start_date_used = args$start_date)
         setorderv(out, "timestamp")
         # Simple dedup before publishing
         out <- simple_dedup_by_key(out)
+        out <- fix_single_blank_id(out) 
         raw_like_rv(out)
         finished_at <- Sys.time()
         t_total_ms <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
@@ -1340,10 +1440,11 @@ mod_prepare_server <- function(
         out <- promote_canonical_vars(out, cols_out)
         out <- prune_to_canonical(out)
         try(validate_canonical(out), silent = TRUE)
-        out <- attach_provenance(out, "daily", paste0("daily→hourly(", dia, ")"), tz_string, offset_policy, started_at, offset_hours = res$tz_off,start_date_used=args$start_date)
+        out <- attach_provenance(out, "daily", paste0("daily→hourly(", dia, ")"), tz_string, offset_policy, started_at, offset_hours = res$tz_off, start_date_used = args$start_date)
         setorderv(out, "timestamp")
         # Simple dedup before publishing
         out <- simple_dedup_by_key(out)
+        out <- fix_single_blank_id(out) 
         raw_like_rv(out)
         finished_at <- Sys.time()
         t_total_ms <- as.numeric((proc.time() - t_total_start)[["elapsed"]]) * 1000
@@ -1364,7 +1465,8 @@ mod_prepare_server <- function(
       raw_uploaded = shiny::reactive(raw_file()),
       hourly_file  = shiny::reactive(raw_like_rv()),
       src_daily    = shiny::reactive(daily_src_rv()),
-      prep_meta    = shiny::reactive(meta_rv())
+      prep_meta    = shiny::reactive(meta_rv()),
+      busy         = shiny::reactive(busy_rv())
     )
   })
 }

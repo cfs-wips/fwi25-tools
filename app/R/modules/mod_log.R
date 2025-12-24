@@ -3,6 +3,7 @@ mod_log_ui <- function(id) {
   ns <- NS(id)
   tags$div(
     role = "region",
+    conditionalPanel("!output.can_show_results", tags$span(class = "badge bg-warning text-dark ms-2", "Awaiting new run")),
     verbatimTextOutput(ns("log"), placeholder = TRUE)
   )
 }
