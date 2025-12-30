@@ -365,7 +365,7 @@ mod_plot_server <- function(
     )
     # ---- Auto-init when Plot tab first opens ----
     plotted_once <- reactiveVal(FALSE)
-    observeEvent(list(tab_active(), results()),
+    observeEvent(results(),
       {
         req(tab_active() == "Plot", !plotted_once())
         d <- results()
