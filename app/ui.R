@@ -31,6 +31,7 @@ ui <- fluidPage(
         mainPanel(
           width = 8,
           tags$div(
+            class="mainPanel",
             id = "tabs-region",
             role = "region",
             `aria-label` = "Primary output tabs",

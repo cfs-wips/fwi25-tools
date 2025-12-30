@@ -20,7 +20,7 @@ mod_fwi87_table_ui <- function(id) {
       });
     ")),
     tags$section(
-      class = "gc-card",
+      class = "gc-card fwi87-tab",
       tags$div(role = "region", `aria-label` = "FWI87 results table", uiOutput(ns("title"))),
       div(
         class = "gc-card__content",
@@ -29,7 +29,7 @@ mod_fwi87_table_ui <- function(id) {
           div(class = "gc-placeholder__text", uiOutput(ns("hint")))
         ),
         div(
-          class = "gc-spin-wrap fwi87-tab",
+          class = "gc-spin-wrap",
           # ⬇️ fill vertically to card height
           DT::DTOutput(ns("tbl"), width = "100%", height = "100%", fill = TRUE),
           div(
@@ -285,10 +285,8 @@ mod_fwi87_table_server <- function(id, tr, dt_i18n, df87, tz_reactive,
             autoWidth = FALSE, # <- match mod_inputs
             deferRender = TRUE, # <- match mod_inputs
             scrollX = TRUE, # <- match mod_inputs
-            scrollY = 240, # <- match mod_inputs
-            pageLength = 10, # <- match mod_inputs
-            lengthMenu = list(c(10, 20, 50, 100, -1), c("10", "20", "50", "100", "All")),
-            dom = "Blrtip",
+            scrollY = "38vh", # <- match mod_inputs
+            dom = "Brtp",
             buttons = list(
               list(extend = "copy", text = tr("dt_btn_copy")),
               list(extend = "csv", text = tr("dt_btn_csv"), filename = "dailyFWI"),

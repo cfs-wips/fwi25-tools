@@ -1,11 +1,11 @@
-options(fwi.debug_times = FALSE)
+# options(fwi.debug_times = FALSE)
 options(shiny.bindcache.default = "app")
-reactlog::reactlog_enable()
+# reactlog::reactlog_enable()
 
-options(error = function(e) {
-  message("FWI25 startup error: ", conditionMessage(e))
-  traceback(2)
-})
+# options(error = function(e) {
+#   message("FWI25 startup error: ", conditionMessage(e))
+#   traceback(2)
+# })
 
 library(shiny)
 library(munsell)

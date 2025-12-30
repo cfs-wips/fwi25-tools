@@ -6,7 +6,7 @@ mod_inputs_ui <- function(id) {
   ns <- NS(id)
   tagList(
     tags$div(
-      class = "gc-card",
+      class = "gc-card inputs-tab",
       # Translated label and choices
       radioButtons(
         inputId = ns("view_mode"),
@@ -16,7 +16,7 @@ mod_inputs_ui <- function(id) {
         inline = TRUE
       ),
       div(
-        class = "gc-spin-wrap inputs-tab",
+        class = "gc-spin-wrap",
         DT::dataTableOutput(ns("inputs_table"), width = "100%", height = "100%", fill = TRUE),
         div(
           class = "gc-spin-overlay",
@@ -73,9 +73,9 @@ mod_inputs_server <- function(id, tr, dt_i18n, raw_data, hourly_data) {
           language = dt_i18n(),
           autoWidth = FALSE,
           scrollX = FALSE,
-          scrollY = 360,
-          pageLength = 25,
-          lengthMenu = list(c(10, 25, 50, 100, -1), c("10", "25", "50", "100", "All")),
+          scrollY = "80vh",
+          pageLength = 20,
+          lengthMenu = list(c(10, 20, 50, 100, -1), c("10", "20", "50", "100", "All")),
           dom = "Blrtip",
           buttons = list(
             list(extend = "copy", text = tr("dt_btn_copy")),

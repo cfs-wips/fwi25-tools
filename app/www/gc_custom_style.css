@@ -311,19 +311,6 @@ table.dataTable.gc-dt.stripe tbody tr:nth-child(even) { background-color: #fafaf
   
 }
 
-.gc-spin-wrap.inputs-tab {
-  max-height: 89vh;
-  height: 89vh;
-}
-.gc-spin-wrap.fwi87-tab {
-  max-height: 43.5vh;
-  height: 43.5vh;
-}
-.gc-spin-wrap.fwi25-tab {
-  max-height: 43.5vh;
-  height: 43.5vh;
-}
-
 /* The overlay itself: centered spinner + optional scrim */
 .gc-spin-overlay {
   position: absolute;

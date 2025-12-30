@@ -19,7 +19,7 @@ mod_results_table_ui <- function(id) {
       });
     ")),
     tags$section(
-      class = "gc-card",
+      class = "gc-card fwi25-tab",
       tags$div(role = "region", `aria-label` = "FWI25 results table", uiOutput(ns("title"))),
       div(
         class = "gc-card__content",
@@ -28,7 +28,7 @@ mod_results_table_ui <- function(id) {
           div(class = "gc-placeholder__text", uiOutput(ns("hint")))
         ),
         div(
-          class = "gc-spin-wrap fwi25-tab",
+          class = "gc-spin-wrap",
           # ⬇️ make the output a ‘fill item’ so it can grow to card height
           DT::DTOutput(ns("tbl"), width = "100%", height = "100%", fill = TRUE),
           div(
@@ -359,10 +359,8 @@ mod_results_table_server <- function(id, tr, dt_i18n, results, tz_reactive,
             autoWidth = FALSE, # <- match mod_inputs (reduces width recalcs)
             deferRender = TRUE, # <- faster initial draw
             scrollX = TRUE, # <- match mod_inputs
-            scrollY = 240, # <- match mod_inputs; adjust if this feels too tall
-            pageLength = 10, # <- match mod_inputs
-            lengthMenu = list(c(10, 20, 50, 100, -1), c("10", "20", "50", "100", "All")),
-            dom = "Blrtip",
+            scrollY = "38vh", # <- match mod_inputs; adjust if this feels too tall
+            dom = "Brtp",
             buttons = list(
               list(extend = "copy", text = tr("dt_btn_copy")),
               list(extend = "csv", text = tr("dt_btn_csv"), filename = "results"),
