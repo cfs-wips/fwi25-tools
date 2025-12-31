@@ -2,6 +2,8 @@
 name: Build & Deploy Shinylive app to GitHub Pages
 
 on:
+  push:
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
@@ -23,94 +25,60 @@ jobs:
       - name: Setup R
         uses: r-lib/actions/setup-r@v2
         with:
-          use-public-rspm: true
-
-      - name: Cache R packages
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.R_LIBS_USER }}
-          key: ${{ runner.os }}-r-${{ hashFiles('**/*.R', '**/*.Rmd', '**/DESCRIPTION', '**/renv.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-r-
-
-      - name: Install R packages
+          use-public-rspm: true  # fast binary installs on Ubuntu
+      # setup-r-dependencies caches CRAN binaries and installs R deps for export
+      - name: Install R packages for export
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
           extra-packages: |
             any::shinylive
+            any::httpuv
             any::shiny
-            any::DT
+            any::bslib
             any::plotly
+            any::DT
             any::jsonlite
             any::lubridate
             any::data.table
             any::cffdrs
-            any::munsell
           needs: |
             shinylive
             shiny
-            DT
+            bslib
             plotly
+            DT
             jsonlite
             lubridate
             data.table
             cffdrs
-            munsell
 
-      # ✅ Prebundle WASM packages using rwasm (install from GitHub with token)
-      - name: Prebundle WASM packages
-        shell: Rscript {0}
-        env:
-          GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if (!requireNamespace("pak", quietly = TRUE)) install.packages("pak")
-          pak::pkg_install("r-wasm/rwasm")  # uses GITHUB_PAT for auth
-          dir.create("docs/vfs", showWarnings = FALSE)
-          rwasm::add_pkg(c(
-            "shiny", "DT", "plotly", "jsonlite", "lubridate",
-            "data.table", "cffdrs", "munsell"
-          ))
-          rwasm::make_vfs_library(outdir = "docs/vfs")
-
-      # ✅ Export Shinylive site (no wasm_packages = TRUE since we prebundle)
-      - name: Export Shinylive site
+      - name: Export Shinylive site (bundle WASM packages)
         shell: Rscript {0}
         run: |
           dir.create("docs", showWarnings = FALSE)
           shinylive::export(
             appdir = "app",
             destdir = "docs",
-            template_params = list(title = "Hourly FWI (NG‑CFFDRS)")
+            wasm_packages = TRUE,
+            template_params = list(
+              title = "Hourly FWI (NG‑CFFDRS)",
+              include_after_body = htmltools::HTML(
+                '<script type="module">
+                   import { WebR } from "./shinylive/webr.mjs";
+                   const webR = new WebR();
+                   await webR.init();
+                   // Optional warm-up to reduce first interaction latency:
+                   await webR.evalR("invisible(TRUE)");
+                   // Sanity check: these SHOULD NOT be loaded for your app
+                   // (remove if you prefer a silent startup)
+                   // await webR.evalR("cat(\"sf loaded? \", \"sf\" %in% loadedNamespaces(), \"\\n\")");
+                   // await webR.evalR("cat(\"terra loaded? \", \"terra\" %in% loadedNamespaces(), \"\\n\")");
+                 </script>'
+              )
+            )
           )
+          # Ensure GitHub Pages bypasses Jekyll for /docs
           file.create(file.path("docs", ".nojekyll"))
-
-      # ✅ Insert mounting script before </body> (safer than appending)
-      - name: Patch index.html for VFS mounting
-        shell: bash
-        run: |
-          awk '
-            /<\/body>/ {
-              print "<script type=\"module\">"
-              print "import { WebR } from \"./shinylive/webr.mjs\";"
-              print "const webR = new WebR();"
-              print "await webR.init();"
-              print "await webR.evalR(`"
-              print "  webr::mount(\"/webr-lib\", \"/vfs/library.data\")"
-              print "  .libPaths(c(.libPaths(), \"/webr-lib\"))"
-              print "`);"
-              print "</script>"
-            }
-            { print }
-          ' docs/index.html > docs/index.patched.html
-          mv docs/index.patched.html docs/index.html
-
-      # ✅ Compress assets with Brotli (smaller payloads, faster loads)
-      - name: Compress assets with Brotli
-        shell: bash
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y brotli
-          find docs -type f \( -name "*.js" -o -name "*.wasm" -o -name "*.css" \) -exec brotli --force {} \;
 
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
