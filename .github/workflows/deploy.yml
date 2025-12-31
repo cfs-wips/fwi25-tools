@@ -29,35 +29,33 @@ jobs:
         uses: r-lib/actions/setup-r@v2
         with:
           r-version: release
-          use-public-rspm: true   # Posit Package Manager for fast binary installs
+          use-public-rspm: true
 
-      - name: Restore/install R packages
+      # === Option A: per-step fix so pak's helper inherits the library ===
+      - name: Resolve and install R deps with pak
         shell: Rscript {0}
-        env:
-          # Keep builds reproducible and fast
-          RSPM: https://packagemanager.posit.co/cran/__linux__/noble/latest
-          RENV_CONFIG_REPOS_OVERRIDE: https://packagemanager.posit.co/cran/__linux__/noble/latest
         run: |
-          message("::group::Restore/install R packages")
-          # Prefer renv if lockfile exists
-          if (file.exists("renv.lock")) {
-            if (!requireNamespace("renv", quietly = TRUE)) install.packages("renv")
-            renv::restore()
-          } else {
-            # Fallback: install minimal deps for the app
-            pkgs <- c(
-              "shinylive","shiny","bslib","plotly","DT",
-              "jsonlite","lubridate","data.table","cffdrs","munsell","sessioninfo"
-            )
-            install.packages(pkgs)
-          }
-          message("::endgroup::")
+          # Ensure pak and its helper subprocess see the same library
+          Sys.setenv(R_LIBS = .libPaths()[1])
+
+          # Install pak if needed, then load it
+          if (!requireNamespace("pak", quietly = TRUE)) install.packages("pak")
+          library(pak, lib.loc = .libPaths()[1])
+
+          # If your app is an R package, you can use the package root (".")
+          # Otherwise, declare the deps explicitly or scan a manifest.
+          # Here, we compute deps and create a lockfile for reproducibility.
+          deps <- c("shiny", "shinylive", "bslib", "plotly", "DT",
+                    "jsonlite", "lubridate", "data.table", "cffdrs", "munsell")
+          pak::lockfile_create(deps, lockfile = ".github/pkg.lock", upgrade = FALSE)
+
+          # Install the dependencies
+          pak::pkg_install(deps)
 
       - name: Build Shinylive export to ./docs
         shell: bash
         run: |
           set -euo pipefail
-          R -q -e 'sessioninfo::session_info()'
           R -q -e 'shinylive::export("app", "docs")'
 
       - name: Verify exported site (has index.html)
@@ -86,4 +84,4 @@ jobs:
         uses: actions/deploy-pages@v4
         with:
           artifact_name: github-pages
-          timeout: 600000  # 10 minutes (default)
+          timeout: 600000  # 10 minutes
